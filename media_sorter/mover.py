@@ -81,7 +81,7 @@ def is_junk_file(
                 logger.warning('Не удалось получить размер %s: %s', path, exc)
             else:
                 if size <= video_max_bytes:
-                    reasons.append(f'мелкое видео (<= {video_max_bytes / (1024 * 1024):g} МБ)')
+                    reasons.append(f'мелкое видео (<= {video_max_bytes / 1024:g} КБ)')
         if video_max_seconds is not None:
             duration = extract_video_duration(path)
             if duration is not None and duration <= video_max_seconds:

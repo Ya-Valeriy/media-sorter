@@ -22,6 +22,12 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, scrolledtext, ttk
 from typing import Any, Dict, List, Optional
 
+try:
+    from PIL import Image, ImageTk  # масштабирование фона под размер окна
+    _HAS_PIL = True
+except ImportError:
+    _HAS_PIL = False
+
 from launcher_common import (
     APP_TITLE,
     CONFIG_FILE,
@@ -37,9 +43,9 @@ from launcher_common import (
 
 logger = logging.getLogger(__name__)
 
-# Размеры окна
-WINDOW_WIDTH: int = 560
-WINDOW_HEIGHT: int = 510
+# Базовые размеры окна (увеличены на 50% по ширине и 30% по высоте от 560x510)
+BASE_WIDTH: int = 840
+BASE_HEIGHT: int = 663
 
 
 class LauncherApp:
@@ -52,11 +58,28 @@ class LauncherApp:
         self.process: Optional[subprocess.Popen] = None
         self.last_report: Optional[Path] = None
         self.last_dest: Optional[Path] = None
+        self.scale: float = 1.0
+        self.win_w: int = BASE_WIDTH
+        self.win_h: int = BASE_HEIGHT
 
         self._build_ui()
-        self._center_window(WINDOW_WIDTH, WINDOW_HEIGHT)
+        self._center_window(self.win_w, self.win_h)
         self.root.protocol('WM_DELETE_WINDOW', self._on_close)
         self.root.after(100, self._poll_output)
+
+    # --- Масштабирование ---
+
+    def _s(self, value: float) -> int:
+        """Масштабирует координату или размер под размер окна."""
+        return int(value * self.scale)
+
+    def _font(self, pt: float, bold: bool = False) -> tuple:
+        """Шрифт Segoe UI с учётом масштаба окна."""
+        return ('Segoe UI', max(9, int(pt * self.scale)), 'bold' if bold else 'normal')
+
+    def _font_mono(self, pt: float) -> tuple:
+        """Моноширинный шрифт с учётом масштаба окна."""
+        return ('Consolas', max(9, int(pt * self.scale)))
 
     # --- Построение интерфейса ---
 
@@ -73,7 +96,14 @@ class LauncherApp:
             except tk.TclError:
                 pass
 
-        W, H = WINDOW_WIDTH, WINDOW_HEIGHT
+        # --- Адаптация окна под экран монитора ---
+        screen_w = self.root.winfo_screenwidth()
+        screen_h = self.root.winfo_screenheight()
+        self.scale = min(screen_w * 0.95 / BASE_WIDTH, screen_h * 0.9 / BASE_HEIGHT)
+        self.scale = max(0.85, min(self.scale, 2.2))
+        W = self.win_w = int(BASE_WIDTH * self.scale)
+        H = self.win_h = int(BASE_HEIGHT * self.scale)
+        S = self._s
 
         # --- Фон: холст с чёрно-белым изображением ---
         canvas = tk.Canvas(self.root, width=W, height=H, highlightthickness=0, bd=0)
@@ -84,9 +114,13 @@ class LauncherApp:
         self.bg_photo: Optional[tk.PhotoImage] = None
         if bg_path.exists():
             try:
-                self.bg_photo = tk.PhotoImage(file=str(bg_path))
+                if _HAS_PIL:
+                    img = Image.open(bg_path).resize((W, H), Image.LANCZOS)
+                    self.bg_photo = ImageTk.PhotoImage(img)
+                else:
+                    self.bg_photo = tk.PhotoImage(file=str(bg_path))
                 canvas.create_image(0, 0, image=self.bg_photo, anchor=tk.NW)
-            except tk.TclError:
+            except Exception:  # noqa: BLE001
                 self.bg_photo = None
         if self.bg_photo is None:
             canvas.configure(bg='#141414')
@@ -101,7 +135,7 @@ class LauncherApp:
             'TButton',
             background='#2b2b2b', foreground='#e8e8e8',
             bordercolor='#5a5a5a', lightcolor='#2b2b2b', darkcolor='#2b2b2b',
-            padding=(12, 5), font=('Segoe UI', 9),
+            padding=(S(12), S(5)), font=self._font(10),
         )
         style.map(
             'TButton',
@@ -112,14 +146,14 @@ class LauncherApp:
             'Accent.TButton',
             background='#3a3a3a', foreground='#ffffff',
             bordercolor='#9a9a9a', lightcolor='#3a3a3a', darkcolor='#3a3a3a',
-            font=('Segoe UI', 10, 'bold'),
+            font=self._font(11, bold=True),
         )
         style.map(
             'Accent.TButton',
             background=[('active', '#4d4d4d'), ('pressed', '#2a2a2a'), ('disabled', '#222222')],
             foreground=[('disabled', '#777777')],
         )
-        style.configure('TCheckbutton', background='#141414', foreground='#d0d0d0', font=('Segoe UI', 9))
+        style.configure('TCheckbutton', background='#141414', foreground='#d0d0d0', font=self._font(10))
         style.map('TCheckbutton', background=[('active', '#141414')])
         style.configure(
             'TProgressbar',
@@ -128,82 +162,88 @@ class LauncherApp:
         )
 
         # --- Заголовок ---
-        canvas.create_text(W // 2, 20, text=APP_TITLE, fill='#ffffff',
-                           font=('Segoe UI', 16, 'bold'))
-        canvas.create_text(W // 2, 44, text='ПОМОЩНИК СОРТИРОВКИ МЕДИА', fill='#9a9a9a',
-                           font=('Segoe UI', 9, 'italic'))
+        canvas.create_text(W // 2, S(0.030 * H), text=APP_TITLE, fill='#ffffff',
+                           font=self._font(18, bold=True))
+        canvas.create_text(W // 2, S(0.062 * H), text='ПОМОЩНИК СОРТИРОВКИ МЕДИА', fill='#9a9a9a',
+                           font=self._font(10))
 
         # --- Папка с медиафайлами ---
-        canvas.create_text(30, 72, text='ПАПКА С МЕДИАФАЙЛАМИ', anchor=tk.W,
-                           fill='#b0b0b0', font=('Segoe UI', 8, 'bold'))
+        canvas.create_text(S(0.04 * W), S(0.100 * H), text='ПАПКА С МЕДИАФАЙЛАМИ', anchor=tk.W,
+                           fill='#b0b0b0', font=self._font(9, bold=True))
         self.source_var = tk.StringVar(value=self.config.get('last_source', ''))
         source_entry = tk.Entry(
             canvas, textvariable=self.source_var, state='readonly',
             bg='#1c1c1c', fg='#e0e0e0', readonlybackground='#1c1c1c',
             insertbackground='#e0e0e0', relief=tk.FLAT,
             highlightthickness=1, highlightbackground='#4a4a4a', highlightcolor='#8a8a8a',
-            font=('Consolas', 9),
+            font=self._font_mono(10),
         )
-        self._place(source_entry, 30, 90, 400, 26)
-        self._place(ttk.Button(canvas, text='Обзор...', command=self._browse_source), 440, 88, 90, 30)
+        self._place(source_entry, S(0.04 * W), S(0.122 * H), S(0.72 * W), S(0.042 * H))
+        self._place(ttk.Button(canvas, text='Обзор...', command=self._browse_source),
+                    S(0.78 * W), S(0.120 * H), S(0.18 * W), S(0.046 * H))
 
         # --- Папка назначения ---
-        canvas.create_text(30, 128, text='ПАПКА НАЗНАЧЕНИЯ', anchor=tk.W,
-                           fill='#b0b0b0', font=('Segoe UI', 8, 'bold'))
+        canvas.create_text(S(0.04 * W), S(0.170 * H), text='ПАПКА НАЗНАЧЕНИЯ', anchor=tk.W,
+                           fill='#b0b0b0', font=self._font(9, bold=True))
         self.dest_var = tk.StringVar(value=self.config.get('default_destination', ''))
         dest_entry = tk.Entry(
             canvas, textvariable=self.dest_var,
             bg='#1c1c1c', fg='#e0e0e0',
             insertbackground='#e0e0e0', relief=tk.FLAT,
             highlightthickness=1, highlightbackground='#4a4a4a', highlightcolor='#8a8a8a',
-            font=('Consolas', 9),
+            font=self._font_mono(10),
         )
-        self._place(dest_entry, 30, 146, 400, 26)
-        self._place(ttk.Button(canvas, text='Обзор...', command=self._browse_dest), 440, 144, 90, 30)
+        self._place(dest_entry, S(0.04 * W), S(0.192 * H), S(0.72 * W), S(0.042 * H))
+        self._place(ttk.Button(canvas, text='Обзор...', command=self._browse_dest),
+                    S(0.78 * W), S(0.190 * H), S(0.18 * W), S(0.046 * H))
 
         # --- Флаги ---
         flags = self.config.get('default_flags', {})
         self.dry_run_var = tk.BooleanVar(value=bool(flags.get('dry_run_default', False)))
         self.duplicates_var = tk.BooleanVar(value=bool(flags.get('check_duplicates', True)))
         self.junk_var = tk.BooleanVar(value=bool(flags.get('junk_folder', True)))
-        self._place(ttk.Checkbutton(canvas, text='Пробный прогон (dry-run)', variable=self.dry_run_var), 30, 186)
-        self._place(ttk.Checkbutton(canvas, text='Проверять дубликаты', variable=self.duplicates_var), 30, 208)
-        self._place(ttk.Checkbutton(canvas, text='Мелкие файлы в Мусор', variable=self.junk_var), 30, 230)
+        self._place(ttk.Checkbutton(canvas, text='Пробный прогон (dry-run)', variable=self.dry_run_var),
+                    S(0.04 * W), S(0.245 * H))
+        self._place(ttk.Checkbutton(canvas, text='Проверять дубликаты', variable=self.duplicates_var),
+                    S(0.04 * W), S(0.270 * H))
+        self._place(ttk.Checkbutton(canvas, text='Мелкие файлы в Мусор', variable=self.junk_var),
+                    S(0.04 * W), S(0.295 * H))
 
         # --- Пороги «Мусора» ---
-        canvas.create_text(30, 256, text='ПОРОГИ МУСОРА (0 — не задано)', anchor=tk.W,
-                           fill='#b0b0b0', font=('Segoe UI', 8, 'bold'))
+        canvas.create_text(S(0.04 * W), S(0.330 * H), text='ПОРОГИ МУСОРА (0 — не задано)', anchor=tk.W,
+                           fill='#b0b0b0', font=self._font(9, bold=True))
         self.photo_kb_var = tk.StringVar(value='2048')
         self.video_sec_var = tk.StringVar(value='10')
-        self.video_mb_var = tk.StringVar(value='0')
-        self._junk_field(canvas, 30, 276, 'Фото ≤', self.photo_kb_var, 'КБ')
-        self._junk_field(canvas, 200, 276, 'Видео ≤', self.video_sec_var, 'с')
-        self._junk_field(canvas, 370, 276, 'Видео ≤', self.video_mb_var, 'МБ')
+        self.video_kb_var = tk.StringVar(value='0')
+        self._junk_field(canvas, S(0.04 * W), S(0.352 * H), 'Фото ≤', self.photo_kb_var, 'КБ')
+        self._junk_field(canvas, S(0.30 * W), S(0.352 * H), 'Видео ≤', self.video_sec_var, 'сек.')
+        self._junk_field(canvas, S(0.56 * W), S(0.352 * H), 'Видео ≤', self.video_kb_var, 'КБ')
 
         # --- Кнопки ---
         self.run_button = ttk.Button(canvas, text='Запустить', style='Accent.TButton',
                                      command=self._start_sorting)
-        self._place(self.run_button, 30, 312, 110, 32)
-        self._place(ttk.Button(canvas, text='Отмена', command=self._on_close), 150, 312, 90, 32)
+        self._place(self.run_button, S(0.04 * W), S(0.400 * H), S(0.16 * W), S(0.050 * H))
+        self._place(ttk.Button(canvas, text='Отмена', command=self._on_close),
+                    S(0.22 * W), S(0.400 * H), S(0.13 * W), S(0.050 * H))
         self.report_button = ttk.Button(canvas, text='Открыть отчёт', command=self._open_report,
                                         state=tk.DISABLED)
-        self._place(self.report_button, 250, 312, 110, 32)
+        self._place(self.report_button, S(0.37 * W), S(0.400 * H), S(0.16 * W), S(0.050 * H))
         self.dest_button = ttk.Button(canvas, text='Открыть папку', command=self._open_dest,
                                       state=tk.DISABLED)
-        self._place(self.dest_button, 370, 312, 110, 32)
+        self._place(self.dest_button, S(0.55 * W), S(0.400 * H), S(0.16 * W), S(0.050 * H))
 
         # --- Прогресс ---
         self.progress = ttk.Progressbar(canvas, mode='indeterminate')
-        self._place(self.progress, 30, 356, 500, 14)
+        self._place(self.progress, S(0.04 * W), S(0.462 * H), S(0.92 * W), S(0.018 * H))
 
-        # --- Лог ---
+        # --- Лог (занимает ~50% окна) ---
         self.log_text = scrolledtext.ScrolledText(
-            canvas, height=6, state=tk.DISABLED,
+            canvas, state=tk.DISABLED,
             bg='#101010', fg='#c8c8c8', insertbackground='#c8c8c8',
             relief=tk.FLAT, highlightthickness=1, highlightbackground='#3a3a3a',
-            highlightcolor='#6a6a6a', font=('Consolas', 9), padx=6, pady=4,
+            highlightcolor='#6a6a6a', font=self._font_mono(10), padx=S(6), pady=S(4),
         )
-        self._place(self.log_text, 30, 382, 500, 114)
+        self._place(self.log_text, S(0.04 * W), S(0.500 * H), S(0.92 * W), S(0.470 * H))
 
     def _place(self, widget: tk.Widget, x: int, y: int,
                w: Optional[int] = None, h: Optional[int] = None) -> None:
@@ -218,18 +258,19 @@ class LauncherApp:
     def _junk_field(self, canvas: tk.Canvas, x: int, y: int, label: str,
                     var: tk.StringVar, unit: str) -> None:
         """Создаёт поле ввода порога «Мусора»: подпись + поле + единица."""
-        canvas.create_text(x, y + 4, text=label, anchor=tk.W,
-                           fill='#c0c0c0', font=('Segoe UI', 9))
+        S = self._s
+        canvas.create_text(x, y + S(6), text=label, anchor=tk.W,
+                           fill='#c0c0c0', font=self._font(10))
         entry = tk.Entry(
-            canvas, textvariable=var, width=6, justify=tk.CENTER,
+            canvas, textvariable=var, width=8, justify=tk.CENTER,
             bg='#1c1c1c', fg='#e0e0e0', insertbackground='#e0e0e0',
             relief=tk.FLAT, highlightthickness=1,
             highlightbackground='#4a4a4a', highlightcolor='#8a8a8a',
-            font=('Consolas', 9),
+            font=self._font_mono(10),
         )
-        self._place(entry, x + 52, y, 56, 24)
-        canvas.create_text(x + 114, y + 4, text=unit, anchor=tk.W,
-                           fill='#c0c0c0', font=('Segoe UI', 9))
+        self._place(entry, x + S(70), y, S(90), S(30))
+        canvas.create_text(x + S(170), y + S(6), text=unit, anchor=tk.W,
+                           fill='#c0c0c0', font=self._font(10))
 
     def _center_window(self, width: int, height: int) -> None:
         """Размещает окно по центру экрана."""
@@ -322,7 +363,7 @@ class LauncherApp:
             for flag, var in (
                 ('--photo-junk-max-kb', self.photo_kb_var),
                 ('--video-junk-max-sec', self.video_sec_var),
-                ('--video-junk-max-mb', self.video_mb_var),
+                ('--video-junk-max-kb', self.video_kb_var),
             ):
                 value = var.get().strip().replace(',', '.')
                 if not value:
