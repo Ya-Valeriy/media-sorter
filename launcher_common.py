@@ -76,7 +76,12 @@ def build_default_config() -> Dict[str, Any]:
     base = get_base_dir()
     config = json.loads(json.dumps(DEFAULT_CONFIG))  # глубокая копия
     config['script_path'] = str(base / 'sort_media.py')
-    config['python_path'] = sys.executable
+    # Для sort_media.py нужен консольный python.exe (вывод в stdout),
+    # а не pythonw.exe — иначе прогресс-бар и логи не будут работать.
+    exe = Path(sys.executable)
+    if exe.name.lower() == 'pythonw.exe':
+        exe = exe.with_name('python.exe')
+    config['python_path'] = str(exe)
     return config
 
 

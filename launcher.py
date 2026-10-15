@@ -264,7 +264,12 @@ class LauncherApp:
         if configured:
             path = Path(configured)
             candidates.append(path if path.is_absolute() else get_base_dir() / path)
-        candidates.append(Path(sys.executable))
+        # Для sort_media.py нужен консольный python.exe (вывод в stdout),
+        # а не pythonw.exe — иначе прогресс-бар и логи не будут работать.
+        exe = Path(sys.executable)
+        if exe.name.lower() == 'pythonw.exe':
+            exe = exe.with_name('python.exe')
+        candidates.append(exe)
         for candidate in candidates:
             if candidate and candidate.exists():
                 return candidate
@@ -284,6 +289,8 @@ class LauncherApp:
                 errors='replace',
                 env=env,
                 cwd=str(get_base_dir()),
+                # Не показывать окно консоли для sort_media.py (Windows)
+                creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0,
             )
             self.process = proc
             assert proc.stdout is not None
@@ -364,10 +371,37 @@ class LauncherApp:
         self.root.destroy()
 
 
+def _relaunch_with_pythonw() -> None:
+    """
+    Перезапускает GUI через pythonw.exe, чтобы не открывалось окно консоли.
+
+    Если скрипт запущен консольным python.exe, а рядом есть pythonw.exe
+    (безконсольная версия) — перезапускаемся через него и завершаем
+    текущий процесс. Окно консоли при этом не появляется.
+    """
+    if sys.platform != 'win32':
+        return
+    exe = Path(sys.executable)
+    if exe.name.lower() != 'python.exe':
+        return
+    pythonw = exe.with_name('pythonw.exe')
+    if not pythonw.exists():
+        return
+    try:
+        subprocess.Popen(
+            [str(pythonw), *sys.argv],
+            creationflags=subprocess.CREATE_NO_WINDOW,
+        )
+    except OSError:
+        return  # не удалось перезапуститься — продолжаем в консоли
+    sys.exit(0)
+
+
 def main() -> int:
     """Точка входа GUI-обёртки."""
     from launcher_common import setup_logging
 
+    _relaunch_with_pythonw()
     setup_logging()
     config = load_config()
     logger.info('Запуск %s (ОС: %s)', APP_TITLE, platform.system())
