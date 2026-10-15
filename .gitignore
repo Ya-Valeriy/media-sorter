@@ -1,0 +1,27 @@
+# Портативный Python и бинарные инструменты
+python/
+bin/
+
+# Логи и отчёты
+logs/
+reports/
+
+# Кэши Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Личная конфигурация (создаётся автоматически при запуске)
+config.json
+
+# Ярлыки и файлы портативной сборки
+*.lnk
+Запустить сортировку.bat
+
+# IDE
+.vscode/
+*.code-workspace
+
+# Временные файлы Windows
+Thumbs.db
+Desktop.ini
