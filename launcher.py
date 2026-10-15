@@ -69,6 +69,9 @@ class LauncherApp:
         self._placed: List[tuple] = []       # (widget, base_x, base_y, base_w, base_h)
         self._texts: List[tuple] = []        # (item_id, base_x, base_y, pt, bold)
         self._win_ids: Dict[tk.Widget, int] = {}
+        self._boxes: List[tuple] = []        # (item_id, base_x, base_y, w, h) — квадраты чек-боксов
+        self._checks: List[tuple] = []       # (item_id, base_x, base_y, pt) — галки чек-боксов
+        self._check_vars: Dict[int, int] = {}  # id(var) -> item галки
 
         self._build_ui()
         self._center_window(self.win_w, self.win_h)
@@ -162,41 +165,43 @@ class LauncherApp:
         self._place(dest_entry, 34, 148, 605, 30)
         self._place(ttk.Button(canvas, text='Обзор...', command=self._browse_dest), 655, 147, 151, 32)
 
-        # --- Флаги ---
+        # --- Флаги (в одну строку) ---
         flags = self.config.get('default_flags', {})
         self.dry_run_var = tk.BooleanVar(value=bool(flags.get('dry_run_default', False)))
         self.duplicates_var = tk.BooleanVar(value=bool(flags.get('check_duplicates', True)))
         self.junk_var = tk.BooleanVar(value=bool(flags.get('junk_folder', True)))
-        self._place(ttk.Checkbutton(canvas, text='Пробный прогон (dry-run)', variable=self.dry_run_var), 34, 195)
-        self._place(ttk.Checkbutton(canvas, text='Проверять дубликаты', variable=self.duplicates_var), 34, 218)
-        self._place(ttk.Checkbutton(canvas, text='Мелкие файлы в Мусор', variable=self.junk_var), 34, 241)
+        self._checkbox(34, 195, 'Пробный прогон (dry-run)', self.dry_run_var)
+        self._checkbox(250, 195, 'Проверять дубликаты', self.duplicates_var)
+        self._checkbox(470, 195, 'Мелкие файлы в Мусор', self.junk_var)
 
         # --- Пороги «Мусора» ---
-        self._text(34, 272, 'ПОРОГИ МУСОРА (0 — не задано)', '#b0b0b0', 9, bold=True)
+        self._text(34, 230,
+                   'ПОРОГИ МУСОРА — задать значение в случае помещения файлов-мусора в отдельную папку «Мусор»',
+                   '#b0b0b0', 9, bold=True)
         self.photo_kb_var = tk.StringVar(value='2048')
         self.video_sec_var = tk.StringVar(value='10')
         self.video_kb_var = tk.StringVar(value='0')
-        self._junk_field(canvas, 34, 292, 'Фото ≤', self.photo_kb_var, 'КБ')
-        self._junk_field(canvas, 252, 292, 'Видео ≤', self.video_sec_var, 'сек.')
-        self._junk_field(canvas, 470, 292, 'Видео ≤', self.video_kb_var, 'КБ')
+        self._junk_field(canvas, 34, 250, 'Фото ≤', self.photo_kb_var, 'КБ')
+        self._junk_field(canvas, 252, 250, 'Видео ≤', self.video_sec_var, 'сек.')
+        self._junk_field(canvas, 470, 250, 'Видео ≤', self.video_kb_var, 'КБ')
 
         # --- Кнопки ---
         self.run_button = ttk.Button(canvas, text='Запустить', style='Accent.TButton',
                                      command=self._start_sorting)
-        self._place(self.run_button, 34, 340, 134, 36)
-        self._place(ttk.Button(canvas, text='Отмена', command=self._on_close), 185, 340, 109, 36)
+        self._place(self.run_button, 34, 310, 134, 36)
+        self._place(ttk.Button(canvas, text='Отмена', command=self._on_close), 185, 310, 109, 36)
         self.report_button = ttk.Button(canvas, text='Открыть отчёт', command=self._open_report,
                                         state=tk.DISABLED)
-        self._place(self.report_button, 311, 340, 134, 36)
+        self._place(self.report_button, 311, 310, 134, 36)
         self.dest_button = ttk.Button(canvas, text='Открыть папку', command=self._open_dest,
                                       state=tk.DISABLED)
-        self._place(self.dest_button, 462, 340, 134, 36)
+        self._place(self.dest_button, 462, 310, 134, 36)
         self._place(ttk.Button(canvas, text='⛶ На весь экран', command=self._toggle_fullscreen),
-                    610, 340, 196, 36)
+                    610, 310, 196, 36)
 
         # --- Прогресс ---
         self.progress = ttk.Progressbar(canvas, mode='indeterminate')
-        self._place(self.progress, 34, 395, 773, 14)
+        self._place(self.progress, 34, 370, 773, 14)
 
         # --- Лог (30% окна) ---
         self.log_text = scrolledtext.ScrolledText(
@@ -298,6 +303,34 @@ class LauncherApp:
         self._place(entry, x + 70, y, 90, 30)
         self._text(x + 170, y + 6, unit, '#c0c0c0', 10)
 
+    def _checkbox(self, x: int, y: int, text: str, var: tk.BooleanVar) -> None:
+        """Создаёт чек-бокс: тёмный квадрат + зелёная галка (canvas)."""
+        size = 18
+        box = self.canvas.create_rectangle(
+            self._sx(x), self._sy(y), self._sx(x + size), self._sy(y + size),
+            fill='#1c1c1c', outline='#5a5a5a', width=1,
+        )
+        self._boxes.append((box, x, y, size, size))
+        check = self.canvas.create_text(
+            self._sx(x + size / 2), self._sy(y + size / 2), text='✓',
+            fill='#2ecc40', font=self._font(11, bold=True),
+        )
+        self._checks.append((check, x + size / 2, y + size / 2, 11))
+        self._check_vars[id(var)] = check
+        label = self._text(x + size + 8, y + size / 2, text, '#d0d0d0', 10)
+        for item in (box, check, label):
+            self.canvas.tag_bind(item, '<Button-1>', lambda e, v=var: self._toggle_check(v))
+            self.canvas.tag_bind(item, '<Enter>', lambda e: self.canvas.config(cursor='hand2'))
+            self.canvas.tag_bind(item, '<Leave>', lambda e: self.canvas.config(cursor=''))
+        self.canvas.itemconfig(check, state=tk.NORMAL if var.get() else tk.HIDDEN)
+
+    def _toggle_check(self, var: tk.BooleanVar) -> None:
+        """Переключает значение чек-бокса и обновляет галку."""
+        var.set(not var.get())
+        item = self._check_vars.get(id(var))
+        if item is not None:
+            self.canvas.itemconfig(item, state=tk.NORMAL if var.get() else tk.HIDDEN)
+
     def _on_configure(self, event: tk.Event) -> None:
         """Пересчитывает компоновку при изменении размера окна."""
         if event.widget is not self.root:
@@ -333,6 +366,11 @@ class LauncherApp:
         for item, x, y, pt, bold in self._texts:
             self.canvas.coords(item, self._sx(x), self._sy(y))
             self.canvas.itemconfig(item, font=self._font(pt, bold))
+        for item, x, y, w, h in self._boxes:
+            self.canvas.coords(item, self._sx(x), self._sy(y), self._sx(x + w), self._sy(y + h))
+        for item, x, y, pt in self._checks:
+            self.canvas.coords(item, self._sx(x), self._sy(y))
+            self.canvas.itemconfig(item, font=self._font(pt, bold=True))
         self._setup_styles()
 
     def _toggle_fullscreen(self) -> None:
@@ -367,9 +405,10 @@ class LauncherApp:
         )
         if folder:
             self.source_var.set(folder)
-            # Если папка назначения не задана — предлагаем соседнюю «Sorted»
+            # Если папка назначения не задана — предлагаем родительскую папку
+            # (результаты будут помещены в подпапку MS_helper)
             if not self.dest_var.get().strip():
-                self.dest_var.set(str(Path(folder).parent / 'Sorted'))
+                self.dest_var.set(str(Path(folder).parent))
             logger.info('Выбрана папка-источник: %s', folder)
 
     def _browse_dest(self) -> None:
@@ -385,7 +424,9 @@ class LauncherApp:
     def _start_sorting(self) -> None:
         """Проверяет ввод и запускает sort_media.py в фоновом потоке."""
         source = Path(self.source_var.get().strip())
-        dest = Path(self.dest_var.get().strip())
+        dest_root = Path(self.dest_var.get().strip())
+        # Результаты сортировки помещаются в подпапку MS_helper внутри папки назначения
+        dest = dest_root / 'MS_helper'
 
         # Валидация
         if not source.exists() or not source.is_dir():
@@ -394,8 +435,15 @@ class LauncherApp:
         if not any(source.iterdir()):
             messagebox.showerror('Ошибка', f'Папка-источник пуста:\n{source}')
             return
-        if not str(dest):
+        if not str(dest_root):
             messagebox.showerror('Ошибка', 'Укажите папку назначения.')
+            return
+
+        # Создаём папку MS_helper в папке назначения
+        try:
+            dest.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            messagebox.showerror('Ошибка', f'Не удалось создать папку {dest}:\n{exc}')
             return
 
         script_path = self._resolve_script_path()
@@ -407,7 +455,7 @@ class LauncherApp:
 
         # Сохраняем последние пути в конфиг
         self.config['last_source'] = str(source)
-        self.config['default_destination'] = str(dest)
+        self.config['default_destination'] = str(dest_root)
         save_config(self.config)
 
         # Папки для отчётов и логов (в portable-режиме — reports/ и logs/)
