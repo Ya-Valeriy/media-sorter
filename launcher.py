@@ -294,11 +294,39 @@ class LauncherApp:
             )
             self.process = proc
             assert proc.stdout is not None
-            for line in proc.stdout:
-                self.output_queue.put(line.rstrip('\n'))
-            proc.wait()
+
+            # Читаем вывод в отдельном потоке: если дочерние процессы
+            # удерживают pipe открытым, чтение не должно блокировать
+            # ожидание завершения процесса.
+            def _read_output() -> None:
+                try:
+                    for line in proc.stdout:
+                        self.output_queue.put(line.rstrip('\n'))
+                except (OSError, ValueError):
+                    pass  # pipe закрыт после завершения процесса
+
+            reader = threading.Thread(target=_read_output, daemon=True)
+            reader.start()
+
+            # Ждём завершения процесса (с запасом на большие архивы)
+            try:
+                proc.wait(timeout=3600)
+            except subprocess.TimeoutExpired:
+                logger.warning('sort_media.py не завершился за 1 час — принудительное завершение.')
+                proc.terminate()
+                try:
+                    proc.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+
+            # Процесс завершён: закрываем pipe, чтобы разблокировать чтение
+            try:
+                proc.stdout.close()
+            except OSError:
+                pass
+            reader.join(timeout=5)
             self.output_queue.put(None)  # сигнал завершения
-        except (OSError, subprocess.SubprocessError) as exc:
+        except Exception as exc:  # noqa: BLE001 — поток не должен умирать молча
             logger.exception('Ошибка запуска sort_media.py')
             self.output_queue.put(f'ОШИБКА: {exc}')
             self.output_queue.put(None)
