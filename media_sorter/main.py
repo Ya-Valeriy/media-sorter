@@ -73,14 +73,14 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     parser.add_argument(
         '--photo-junk-max-mb',
         type=float,
-        default=1.0,
-        help='Максимальный размер фото для папки «Мусор» в МБ (по умолчанию: 1)',
+        default=2.0,
+        help='Максимальный размер фото для папки «Мусор» в МБ (по умолчанию: 2)',
     )
     parser.add_argument(
-        '--video-junk-max-mb',
+        '--video-junk-max-sec',
         type=float,
-        default=50.0,
-        help='Максимальный размер видео для папки «Мусор» в МБ (по умолчанию: 50)',
+        default=10.0,
+        help='Максимальная длительность видео для папки «Мусор» в секундах (по умолчанию: 10)',
     )
     parser.add_argument(
         '--no-junk',
@@ -245,8 +245,7 @@ def process_single_file(
     # 2. Проверка «мусорности»: мелкие файлы в отдельную папку
     if not args.no_junk:
         photo_max = int(args.photo_junk_max_mb * 1024 * 1024)
-        video_max = int(args.video_junk_max_mb * 1024 * 1024)
-        junk_reason = is_junk_file(file_path, photo_max, video_max)
+        junk_reason = is_junk_file(file_path, photo_max, args.video_junk_max_sec)
         if junk_reason:
             junk_dest = build_destination_path(dest, filename, None, FOLDER_JUNK)
             final_path, status = move_file_safely(file_path, junk_dest, args.dry_run)

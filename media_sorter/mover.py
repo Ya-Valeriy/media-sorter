@@ -11,7 +11,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional, Tuple
 
-from .date_extractor import IMAGE_EXTENSIONS, VIDEO_EXTENSIONS
+from .date_extractor import IMAGE_EXTENSIONS, VIDEO_EXTENSIONS, extract_video_duration
 
 logger = logging.getLogger(__name__)
 
@@ -48,27 +48,30 @@ def detect_messenger(filename: str) -> Optional[str]:
 def is_junk_file(
     path: Path,
     photo_max_bytes: int,
-    video_max_bytes: int,
+    video_max_seconds: float,
 ) -> Optional[str]:
     """
-    Определяет, является ли файл «мусором» (слишком маленьким).
+    Определяет, является ли файл «мусором».
 
-    Фото (расширение из IMAGE_EXTENSIONS) размером <= photo_max_bytes
-    и видео (VIDEO_EXTENSIONS) размером < video_max_bytes считаются мусором.
+    Фото (IMAGE_EXTENSIONS) размером <= photo_max_bytes и видео
+    (VIDEO_EXTENSIONS) длительностью <= video_max_seconds считаются мусором.
 
-    Возвращает причину ('мелкий файл (фото <= 1 МБ)' / 'мелкий файл (видео < 50 МБ)')
-    или None, если файл не является мусором.
+    Возвращает причину ('мелкий файл (фото <= 2 МБ)' /
+    'короткое видео (<= 10 с)') или None, если файл не является мусором.
     """
     ext = path.suffix.lower()
-    try:
-        size = path.stat().st_size
-    except OSError as exc:
-        logger.warning('Не удалось получить размер %s: %s', path, exc)
-        return None
-    if ext in IMAGE_EXTENSIONS and size <= photo_max_bytes:
-        return f'мелкий файл (фото <= {photo_max_bytes / (1024 * 1024):g} МБ)'
-    if ext in VIDEO_EXTENSIONS and size < video_max_bytes:
-        return f'мелкий файл (видео < {video_max_bytes / (1024 * 1024):g} МБ)'
+    if ext in IMAGE_EXTENSIONS:
+        try:
+            size = path.stat().st_size
+        except OSError as exc:
+            logger.warning('Не удалось получить размер %s: %s', path, exc)
+            return None
+        if size <= photo_max_bytes:
+            return f'мелкий файл (фото <= {photo_max_bytes / (1024 * 1024):g} МБ)'
+    if ext in VIDEO_EXTENSIONS:
+        duration = extract_video_duration(path)
+        if duration is not None and duration <= video_max_seconds:
+            return f'короткое видео (<= {video_max_seconds:g} с)'
     return None
 
 

@@ -327,17 +327,35 @@ def extract_gps_coordinates(path: Path) -> Optional[Tuple[float, float]]:
 # --- Метаданные видео (ffprobe) ---
 
 
+@lru_cache(maxsize=1)
+def _find_ffprobe() -> str:
+    """
+    Ищет ffprobe: сначала в папке bin/ проекта, затем в PATH.
+
+    Портативная сборка хранит ffprobe.exe в bin/, поэтому не полагаемся
+    только на переменную PATH.
+    """
+    project_root = Path(__file__).resolve().parent.parent
+    for name in ('ffprobe.exe', 'ffprobe'):
+        candidate = project_root / 'bin' / name
+        if candidate.exists():
+            return str(candidate)
+    return 'ffprobe'  # из PATH
+
+
 def _probe_video(path: Path) -> Optional[Dict[str, Any]]:
     """
     Получает метаданные видео через ffprobe.
 
     Сначала пробует ffmpeg-python, при его отсутствии — subprocess с ffprobe.
+    ffprobe ищется в bin/ проекта, затем в PATH.
     """
+    ffprobe = _find_ffprobe()
     try:
         import ffmpeg
 
         try:
-            return ffmpeg.probe(str(path))
+            return ffmpeg.probe(str(path), cmd=ffprobe)
         except Exception as exc:
             logger.debug('ffmpeg.probe не сработал для %s: %s', path, exc)
     except ImportError:
@@ -345,7 +363,7 @@ def _probe_video(path: Path) -> Optional[Dict[str, Any]]:
 
     try:
         result = subprocess.run(
-            ['ffprobe', '-v', 'quiet', '-print_format', 'json',
+            [ffprobe, '-v', 'quiet', '-print_format', 'json',
              '-show_format', '-show_streams', str(path)],
             capture_output=True, text=True, timeout=30,
         )
@@ -429,6 +447,34 @@ def extract_date_from_video(path: Path) -> Optional[datetime]:
         dt = _parse_iso_datetime(str(value))
         if dt:
             return _to_local_time(dt)
+    return None
+
+
+def extract_video_duration(path: Path) -> Optional[float]:
+    """
+    Извлекает длительность видео в секундах через ffprobe.
+
+    Сначала берёт format.duration, затем — duration первого потока.
+    Возвращает None, если длительность определить не удалось.
+    """
+    probe = _probe_video(path)
+    if not probe:
+        return None
+
+    try:
+        duration = probe.get('format', {}).get('duration')
+        if duration is not None:
+            return float(duration)
+    except (AttributeError, TypeError, ValueError):
+        pass
+
+    try:
+        for stream in probe.get('streams', []) or []:
+            duration = stream.get('duration')
+            if duration is not None:
+                return float(duration)
+    except (AttributeError, TypeError, ValueError):
+        pass
     return None
 
 
