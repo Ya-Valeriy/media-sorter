@@ -170,9 +170,9 @@ class LauncherApp:
         self.dry_run_var = tk.BooleanVar(value=bool(flags.get('dry_run_default', False)))
         self.duplicates_var = tk.BooleanVar(value=bool(flags.get('check_duplicates', True)))
         self.junk_var = tk.BooleanVar(value=bool(flags.get('junk_folder', True)))
-        self._checkbox(34, 195, 'Пробный прогон (dry-run)', self.dry_run_var)
-        self._checkbox(34, 218, 'Проверять дубликаты', self.duplicates_var)
-        self._checkbox(34, 241, 'Отсортировать мусор (создадим папку «Мусор»)', self.junk_var)
+        self._checkbox(34, 195, 'Пробный прогон (ничего не удалим и не создадим, только проверка)', self.dry_run_var)
+        self._checkbox(34, 218, 'Отсортировать дубликаты (создадим папку Дубликаты)', self.duplicates_var)
+        self._checkbox(34, 241, 'Отсортировать мусор (создадим папку Мусор)', self.junk_var)
 
         # --- Пороги «Мусора» ---
         self._text(34, 272,
@@ -182,8 +182,8 @@ class LauncherApp:
         self.video_sec_var = tk.StringVar(value='10')
         self.video_kb_var = tk.StringVar(value='0')
         self._junk_field(canvas, 34, 292, 'Фото ≤', self.photo_kb_var, 'КБ')
-        self._junk_field(canvas, 252, 292, 'Видео ≤', self.video_sec_var, 'сек.')
-        self._junk_field(canvas, 470, 292, 'Видео ≤', self.video_kb_var, 'КБ')
+        self._junk_field(canvas, 320, 292, 'Видео ≤', self.video_sec_var, 'сек.')
+        self._junk_field(canvas, 606, 292, 'Видео ≤', self.video_kb_var, 'КБ')
 
         # --- Кнопки ---
         self.run_button = ttk.Button(canvas, text='Запустить', style='Accent.TButton',
