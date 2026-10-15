@@ -25,3 +25,7 @@ config.json
 # Временные файлы Windows
 Thumbs.db
 Desktop.ini
+
+# Локальные файлы
+README.txt
+ui_screenshot.png

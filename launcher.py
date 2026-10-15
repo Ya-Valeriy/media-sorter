@@ -59,19 +59,36 @@ class LauncherApp:
         self.last_report: Optional[Path] = None
         self.last_dest: Optional[Path] = None
         self.scale: float = 1.0
+        self.off_x: float = 0.0
+        self.off_y: float = 0.0
         self.win_w: int = BASE_WIDTH
         self.win_h: int = BASE_HEIGHT
+        self._fullscreen: bool = False
+        self._resize_job: Optional[str] = None
+        self._bg_item: Optional[int] = None
+        self._placed: List[tuple] = []       # (widget, base_x, base_y, base_w, base_h)
+        self._texts: List[tuple] = []        # (item_id, base_x, base_y, pt, bold)
+        self._win_ids: Dict[tk.Widget, int] = {}
 
         self._build_ui()
         self._center_window(self.win_w, self.win_h)
         self.root.protocol('WM_DELETE_WINDOW', self._on_close)
+        self.root.bind('<Configure>', self._on_configure)
         self.root.after(100, self._poll_output)
 
     # --- Масштабирование ---
 
     def _s(self, value: float) -> int:
-        """Масштабирует координату или размер под размер окна."""
+        """Масштабирует размер под размер окна."""
         return int(value * self.scale)
+
+    def _sx(self, x: float) -> int:
+        """Масштабирует X-координату с учётом центрирования."""
+        return int(self.off_x + x * self.scale)
+
+    def _sy(self, y: float) -> int:
+        """Масштабирует Y-координату с учётом центрирования."""
+        return int(self.off_y + y * self.scale)
 
     def _font(self, pt: float, bold: bool = False) -> tuple:
         """Шрифт Segoe UI с учётом масштаба окна."""
@@ -86,7 +103,7 @@ class LauncherApp:
     def _build_ui(self) -> None:
         """Создаёт элементы интерфейса (чёрно-белая фото-тема)."""
         self.root.title(APP_TITLE)
-        self.root.resizable(False, False)
+        self.root.resizable(True, True)
 
         # Иконка окна (из фонового фото)
         icon_path = get_base_dir() / 'icon.ico'
@@ -103,29 +120,96 @@ class LauncherApp:
         self.scale = max(0.85, min(self.scale, 2.2))
         W = self.win_w = int(BASE_WIDTH * self.scale)
         H = self.win_h = int(BASE_HEIGHT * self.scale)
-        S = self._s
+        self.off_x = (W - BASE_WIDTH * self.scale) / 2
+        self.off_y = (H - BASE_HEIGHT * self.scale) / 2
 
         # --- Фон: холст с чёрно-белым изображением ---
         canvas = tk.Canvas(self.root, width=W, height=H, highlightthickness=0, bd=0)
         canvas.pack(fill=tk.BOTH, expand=True)
         self.canvas = canvas
-
-        bg_path = get_base_dir() / 'assets' / 'background.png'
-        self.bg_photo: Optional[tk.PhotoImage] = None
-        if bg_path.exists():
-            try:
-                if _HAS_PIL:
-                    img = Image.open(bg_path).resize((W, H), Image.LANCZOS)
-                    self.bg_photo = ImageTk.PhotoImage(img)
-                else:
-                    self.bg_photo = tk.PhotoImage(file=str(bg_path))
-                canvas.create_image(0, 0, image=self.bg_photo, anchor=tk.NW)
-            except Exception:  # noqa: BLE001
-                self.bg_photo = None
-        if self.bg_photo is None:
-            canvas.configure(bg='#141414')
+        self._load_background(W, H)
 
         # --- Стили (тёмная тема) ---
+        self._setup_styles()
+
+        # --- Заголовок ---
+        self._text(420, 20, APP_TITLE, '#ffffff', 18, bold=True, anchor=tk.CENTER)
+        self._text(420, 42, 'ПОМОЩНИК СОРТИРОВКИ МЕДИА', '#9a9a9a', 10, anchor=tk.CENTER)
+
+        # --- Папка с медиафайлами ---
+        self._text(34, 70, 'ПАПКА С МЕДИАФАЙЛАМИ', '#b0b0b0', 9, bold=True)
+        self.source_var = tk.StringVar(value=self.config.get('last_source', ''))
+        source_entry = tk.Entry(
+            canvas, textvariable=self.source_var, state='readonly',
+            bg='#1c1c1c', fg='#e0e0e0', readonlybackground='#1c1c1c',
+            insertbackground='#e0e0e0', relief=tk.FLAT,
+            highlightthickness=1, highlightbackground='#4a4a4a', highlightcolor='#8a8a8a',
+            font=self._font_mono(10),
+        )
+        self._place(source_entry, 34, 88, 605, 30)
+        self._place(ttk.Button(canvas, text='Обзор...', command=self._browse_source), 655, 87, 151, 32)
+
+        # --- Папка назначения ---
+        self._text(34, 130, 'ПАПКА НАЗНАЧЕНИЯ', '#b0b0b0', 9, bold=True)
+        self.dest_var = tk.StringVar(value=self.config.get('default_destination', ''))
+        dest_entry = tk.Entry(
+            canvas, textvariable=self.dest_var,
+            bg='#1c1c1c', fg='#e0e0e0',
+            insertbackground='#e0e0e0', relief=tk.FLAT,
+            highlightthickness=1, highlightbackground='#4a4a4a', highlightcolor='#8a8a8a',
+            font=self._font_mono(10),
+        )
+        self._place(dest_entry, 34, 148, 605, 30)
+        self._place(ttk.Button(canvas, text='Обзор...', command=self._browse_dest), 655, 147, 151, 32)
+
+        # --- Флаги ---
+        flags = self.config.get('default_flags', {})
+        self.dry_run_var = tk.BooleanVar(value=bool(flags.get('dry_run_default', False)))
+        self.duplicates_var = tk.BooleanVar(value=bool(flags.get('check_duplicates', True)))
+        self.junk_var = tk.BooleanVar(value=bool(flags.get('junk_folder', True)))
+        self._place(ttk.Checkbutton(canvas, text='Пробный прогон (dry-run)', variable=self.dry_run_var), 34, 195)
+        self._place(ttk.Checkbutton(canvas, text='Проверять дубликаты', variable=self.duplicates_var), 34, 218)
+        self._place(ttk.Checkbutton(canvas, text='Мелкие файлы в Мусор', variable=self.junk_var), 34, 241)
+
+        # --- Пороги «Мусора» ---
+        self._text(34, 272, 'ПОРОГИ МУСОРА (0 — не задано)', '#b0b0b0', 9, bold=True)
+        self.photo_kb_var = tk.StringVar(value='2048')
+        self.video_sec_var = tk.StringVar(value='10')
+        self.video_kb_var = tk.StringVar(value='0')
+        self._junk_field(canvas, 34, 292, 'Фото ≤', self.photo_kb_var, 'КБ')
+        self._junk_field(canvas, 252, 292, 'Видео ≤', self.video_sec_var, 'сек.')
+        self._junk_field(canvas, 470, 292, 'Видео ≤', self.video_kb_var, 'КБ')
+
+        # --- Кнопки ---
+        self.run_button = ttk.Button(canvas, text='Запустить', style='Accent.TButton',
+                                     command=self._start_sorting)
+        self._place(self.run_button, 34, 340, 134, 36)
+        self._place(ttk.Button(canvas, text='Отмена', command=self._on_close), 185, 340, 109, 36)
+        self.report_button = ttk.Button(canvas, text='Открыть отчёт', command=self._open_report,
+                                        state=tk.DISABLED)
+        self._place(self.report_button, 311, 340, 134, 36)
+        self.dest_button = ttk.Button(canvas, text='Открыть папку', command=self._open_dest,
+                                      state=tk.DISABLED)
+        self._place(self.dest_button, 462, 340, 134, 36)
+        self._place(ttk.Button(canvas, text='⛶ На весь экран', command=self._toggle_fullscreen),
+                    610, 340, 196, 36)
+
+        # --- Прогресс ---
+        self.progress = ttk.Progressbar(canvas, mode='indeterminate')
+        self._place(self.progress, 34, 395, 773, 14)
+
+        # --- Лог (30% окна) ---
+        self.log_text = scrolledtext.ScrolledText(
+            canvas, state=tk.DISABLED,
+            bg='#101010', fg='#c8c8c8', insertbackground='#c8c8c8',
+            relief=tk.FLAT, highlightthickness=1, highlightbackground='#3a3a3a',
+            highlightcolor='#6a6a6a', font=self._font_mono(10), padx=6, pady=4,
+        )
+        self._place(self.log_text, 34, 438, 773, 199)
+
+    def _setup_styles(self) -> None:
+        """Настраивает тёмную тему ttk с учётом масштаба."""
+        S = self._s
         style = ttk.Style()
         try:
             style.theme_use('clam')
@@ -161,106 +245,49 @@ class LauncherApp:
             bordercolor='#333333', lightcolor='#9a9a9a', darkcolor='#9a9a9a',
         )
 
-        # --- Заголовок ---
-        canvas.create_text(W // 2, S(0.030 * H), text=APP_TITLE, fill='#ffffff',
-                           font=self._font(18, bold=True))
-        canvas.create_text(W // 2, S(0.062 * H), text='ПОМОЩНИК СОРТИРОВКИ МЕДИА', fill='#9a9a9a',
-                           font=self._font(10))
-
-        # --- Папка с медиафайлами ---
-        canvas.create_text(S(0.04 * W), S(0.100 * H), text='ПАПКА С МЕДИАФАЙЛАМИ', anchor=tk.W,
-                           fill='#b0b0b0', font=self._font(9, bold=True))
-        self.source_var = tk.StringVar(value=self.config.get('last_source', ''))
-        source_entry = tk.Entry(
-            canvas, textvariable=self.source_var, state='readonly',
-            bg='#1c1c1c', fg='#e0e0e0', readonlybackground='#1c1c1c',
-            insertbackground='#e0e0e0', relief=tk.FLAT,
-            highlightthickness=1, highlightbackground='#4a4a4a', highlightcolor='#8a8a8a',
-            font=self._font_mono(10),
-        )
-        self._place(source_entry, S(0.04 * W), S(0.122 * H), S(0.72 * W), S(0.042 * H))
-        self._place(ttk.Button(canvas, text='Обзор...', command=self._browse_source),
-                    S(0.78 * W), S(0.120 * H), S(0.18 * W), S(0.046 * H))
-
-        # --- Папка назначения ---
-        canvas.create_text(S(0.04 * W), S(0.170 * H), text='ПАПКА НАЗНАЧЕНИЯ', anchor=tk.W,
-                           fill='#b0b0b0', font=self._font(9, bold=True))
-        self.dest_var = tk.StringVar(value=self.config.get('default_destination', ''))
-        dest_entry = tk.Entry(
-            canvas, textvariable=self.dest_var,
-            bg='#1c1c1c', fg='#e0e0e0',
-            insertbackground='#e0e0e0', relief=tk.FLAT,
-            highlightthickness=1, highlightbackground='#4a4a4a', highlightcolor='#8a8a8a',
-            font=self._font_mono(10),
-        )
-        self._place(dest_entry, S(0.04 * W), S(0.192 * H), S(0.72 * W), S(0.042 * H))
-        self._place(ttk.Button(canvas, text='Обзор...', command=self._browse_dest),
-                    S(0.78 * W), S(0.190 * H), S(0.18 * W), S(0.046 * H))
-
-        # --- Флаги ---
-        flags = self.config.get('default_flags', {})
-        self.dry_run_var = tk.BooleanVar(value=bool(flags.get('dry_run_default', False)))
-        self.duplicates_var = tk.BooleanVar(value=bool(flags.get('check_duplicates', True)))
-        self.junk_var = tk.BooleanVar(value=bool(flags.get('junk_folder', True)))
-        self._place(ttk.Checkbutton(canvas, text='Пробный прогон (dry-run)', variable=self.dry_run_var),
-                    S(0.04 * W), S(0.245 * H))
-        self._place(ttk.Checkbutton(canvas, text='Проверять дубликаты', variable=self.duplicates_var),
-                    S(0.04 * W), S(0.270 * H))
-        self._place(ttk.Checkbutton(canvas, text='Мелкие файлы в Мусор', variable=self.junk_var),
-                    S(0.04 * W), S(0.295 * H))
-
-        # --- Пороги «Мусора» ---
-        canvas.create_text(S(0.04 * W), S(0.330 * H), text='ПОРОГИ МУСОРА (0 — не задано)', anchor=tk.W,
-                           fill='#b0b0b0', font=self._font(9, bold=True))
-        self.photo_kb_var = tk.StringVar(value='2048')
-        self.video_sec_var = tk.StringVar(value='10')
-        self.video_kb_var = tk.StringVar(value='0')
-        self._junk_field(canvas, S(0.04 * W), S(0.352 * H), 'Фото ≤', self.photo_kb_var, 'КБ')
-        self._junk_field(canvas, S(0.30 * W), S(0.352 * H), 'Видео ≤', self.video_sec_var, 'сек.')
-        self._junk_field(canvas, S(0.56 * W), S(0.352 * H), 'Видео ≤', self.video_kb_var, 'КБ')
-
-        # --- Кнопки ---
-        self.run_button = ttk.Button(canvas, text='Запустить', style='Accent.TButton',
-                                     command=self._start_sorting)
-        self._place(self.run_button, S(0.04 * W), S(0.400 * H), S(0.16 * W), S(0.050 * H))
-        self._place(ttk.Button(canvas, text='Отмена', command=self._on_close),
-                    S(0.22 * W), S(0.400 * H), S(0.13 * W), S(0.050 * H))
-        self.report_button = ttk.Button(canvas, text='Открыть отчёт', command=self._open_report,
-                                        state=tk.DISABLED)
-        self._place(self.report_button, S(0.37 * W), S(0.400 * H), S(0.16 * W), S(0.050 * H))
-        self.dest_button = ttk.Button(canvas, text='Открыть папку', command=self._open_dest,
-                                      state=tk.DISABLED)
-        self._place(self.dest_button, S(0.55 * W), S(0.400 * H), S(0.16 * W), S(0.050 * H))
-
-        # --- Прогресс ---
-        self.progress = ttk.Progressbar(canvas, mode='indeterminate')
-        self._place(self.progress, S(0.04 * W), S(0.462 * H), S(0.92 * W), S(0.018 * H))
-
-        # --- Лог (занимает ~50% окна) ---
-        self.log_text = scrolledtext.ScrolledText(
-            canvas, state=tk.DISABLED,
-            bg='#101010', fg='#c8c8c8', insertbackground='#c8c8c8',
-            relief=tk.FLAT, highlightthickness=1, highlightbackground='#3a3a3a',
-            highlightcolor='#6a6a6a', font=self._font_mono(10), padx=S(6), pady=S(4),
-        )
-        self._place(self.log_text, S(0.04 * W), S(0.500 * H), S(0.92 * W), S(0.470 * H))
+    def _load_background(self, W: int, H: int) -> None:
+        """Загружает и растягивает фоновое изображение под размер окна."""
+        bg_path = get_base_dir() / 'assets' / 'background.png'
+        if not bg_path.exists():
+            self.canvas.configure(bg='#141414')
+            return
+        try:
+            if _HAS_PIL:
+                img = Image.open(bg_path).resize((W, H), Image.LANCZOS)
+                self.bg_photo = ImageTk.PhotoImage(img)
+            else:
+                self.bg_photo = tk.PhotoImage(file=str(bg_path))
+            if self._bg_item is not None:
+                self.canvas.delete(self._bg_item)
+            self._bg_item = self.canvas.create_image(0, 0, image=self.bg_photo, anchor=tk.NW)
+            self.canvas.tag_lower(self._bg_item)
+        except Exception:  # noqa: BLE001
+            self.canvas.configure(bg='#141414')
 
     def _place(self, widget: tk.Widget, x: int, y: int,
                w: Optional[int] = None, h: Optional[int] = None) -> None:
-        """Размещает виджет на фоновом холсте."""
+        """Размещает виджет (координаты в базовом дизайне 840x663)."""
         opts: Dict[str, Any] = {'window': widget, 'anchor': tk.NW}
         if w is not None:
-            opts['width'] = w
+            opts['width'] = self._s(w)
         if h is not None:
-            opts['height'] = h
-        self.canvas.create_window(x, y, **opts)
+            opts['height'] = self._s(h)
+        item = self.canvas.create_window(self._sx(x), self._sy(y), **opts)
+        self._win_ids[widget] = item
+        self._placed.append((widget, x, y, w or 0, h or 0))
+
+    def _text(self, x: int, y: int, text: str, fill: str, pt: float,
+              bold: bool = False, anchor: str = tk.W) -> int:
+        """Создаёт текст на холсте (координаты в базовом дизайне)."""
+        item = self.canvas.create_text(self._sx(x), self._sy(y), text=text, fill=fill,
+                                       anchor=anchor, font=self._font(pt, bold))
+        self._texts.append((item, x, y, pt, bold))
+        return item
 
     def _junk_field(self, canvas: tk.Canvas, x: int, y: int, label: str,
                     var: tk.StringVar, unit: str) -> None:
         """Создаёт поле ввода порога «Мусора»: подпись + поле + единица."""
-        S = self._s
-        canvas.create_text(x, y + S(6), text=label, anchor=tk.W,
-                           fill='#c0c0c0', font=self._font(10))
+        self._text(x, y + 6, label, '#c0c0c0', 10)
         entry = tk.Entry(
             canvas, textvariable=var, width=8, justify=tk.CENTER,
             bg='#1c1c1c', fg='#e0e0e0', insertbackground='#e0e0e0',
@@ -268,9 +295,57 @@ class LauncherApp:
             highlightbackground='#4a4a4a', highlightcolor='#8a8a8a',
             font=self._font_mono(10),
         )
-        self._place(entry, x + S(70), y, S(90), S(30))
-        canvas.create_text(x + S(170), y + S(6), text=unit, anchor=tk.W,
-                           fill='#c0c0c0', font=self._font(10))
+        self._place(entry, x + 70, y, 90, 30)
+        self._text(x + 170, y + 6, unit, '#c0c0c0', 10)
+
+    def _on_configure(self, event: tk.Event) -> None:
+        """Пересчитывает компоновку при изменении размера окна."""
+        if event.widget is not self.root:
+            return
+        if self._resize_job is not None:
+            self.root.after_cancel(self._resize_job)
+        self._resize_job = self.root.after(120, self._relayout)
+
+    def _relayout(self) -> None:
+        """Пересчитывает масштаб и переразмещает элементы под текущий размер."""
+        self._resize_job = None
+        W = self.root.winfo_width()
+        H = self.root.winfo_height()
+        if W < 200 or H < 200:
+            return
+        self.scale = min(W / BASE_WIDTH, H / BASE_HEIGHT)
+        self.scale = max(0.5, min(self.scale, 3.0))
+        self.off_x = (W - BASE_WIDTH * self.scale) / 2
+        self.off_y = (H - BASE_HEIGHT * self.scale) / 2
+        self._load_background(W, H)
+        for widget, x, y, w, h in self._placed:
+            item = self._win_ids.get(widget)
+            if item is None:
+                continue
+            self.canvas.coords(item, self._sx(x), self._sy(y))
+            opts: Dict[str, Any] = {}
+            if w:
+                opts['width'] = self._s(w)
+            if h:
+                opts['height'] = self._s(h)
+            if opts:
+                self.canvas.itemconfig(item, **opts)
+        for item, x, y, pt, bold in self._texts:
+            self.canvas.coords(item, self._sx(x), self._sy(y))
+            self.canvas.itemconfig(item, font=self._font(pt, bold))
+        self._setup_styles()
+
+    def _toggle_fullscreen(self) -> None:
+        """Разворачивает окно на весь экран / возвращает исходный размер."""
+        self._fullscreen = not self._fullscreen
+        try:
+            if self._fullscreen:
+                self.root.state('zoomed')  # Windows: развернуть на весь экран
+            else:
+                self.root.state('normal')
+                self._center_window(self.win_w, self.win_h)
+        except tk.TclError:
+            self.root.attributes('-fullscreen', self._fullscreen)
 
     def _center_window(self, width: int, height: int) -> None:
         """Размещает окно по центру экрана."""
