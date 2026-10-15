@@ -16,7 +16,7 @@ from typing import Any, Dict
 
 # --- Константы ---
 
-APP_TITLE: str = 'Сортировка медиафайлов'
+APP_TITLE: str = 'MS_helper'
 CONFIG_FILE: str = 'config.json'
 LOG_FILE: str = 'launcher.log'
 

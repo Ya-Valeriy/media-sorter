@@ -130,7 +130,7 @@ class LauncherApp:
         # --- Заголовок ---
         canvas.create_text(W // 2, 20, text=APP_TITLE, fill='#ffffff',
                            font=('Segoe UI', 16, 'bold'))
-        canvas.create_text(W // 2, 44, text='чёрно-белый фотоархив', fill='#9a9a9a',
+        canvas.create_text(W // 2, 44, text='ПОМОЩНИК СОРТИРОВКИ МЕДИА', fill='#9a9a9a',
                            font=('Segoe UI', 9, 'italic'))
 
         # --- Папка с медиафайлами ---
