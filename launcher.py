@@ -144,9 +144,9 @@ class LauncherApp:
         self.source_var = tk.StringVar(value=self.config.get('last_source', ''))
         source_entry = tk.Entry(
             canvas, textvariable=self.source_var, state='readonly',
-            bg='#1c1c1c', fg='#e0e0e0', readonlybackground='#1c1c1c',
-            insertbackground='#e0e0e0', relief=tk.FLAT,
-            highlightthickness=1, highlightbackground='#4a4a4a', highlightcolor='#8a8a8a',
+            bg='#d4d4d4', fg='#1a1a1a', readonlybackground='#d4d4d4',
+            insertbackground='#1a1a1a', relief=tk.FLAT,
+            highlightthickness=1, highlightbackground='#9a9a9a', highlightcolor='#6a6a6a',
             font=self._font_mono(10),
         )
         self._place(source_entry, 34, 88, 605, 30)
@@ -157,9 +157,9 @@ class LauncherApp:
         self.dest_var = tk.StringVar(value=self.config.get('default_destination', ''))
         dest_entry = tk.Entry(
             canvas, textvariable=self.dest_var,
-            bg='#1c1c1c', fg='#e0e0e0',
-            insertbackground='#e0e0e0', relief=tk.FLAT,
-            highlightthickness=1, highlightbackground='#4a4a4a', highlightcolor='#8a8a8a',
+            bg='#d4d4d4', fg='#1a1a1a',
+            insertbackground='#1a1a1a', relief=tk.FLAT,
+            highlightthickness=1, highlightbackground='#9a9a9a', highlightcolor='#6a6a6a',
             font=self._font_mono(10),
         )
         self._place(dest_entry, 34, 148, 605, 30)
@@ -172,11 +172,11 @@ class LauncherApp:
         self.junk_var = tk.BooleanVar(value=bool(flags.get('junk_folder', True)))
         self._checkbox(34, 195, 'Пробный прогон (dry-run)', self.dry_run_var)
         self._checkbox(34, 218, 'Проверять дубликаты', self.duplicates_var)
-        self._checkbox(34, 241, 'Мелкие файлы в Мусор', self.junk_var)
+        self._checkbox(34, 241, 'Отсортировать мусор (создадим папку «Мусор»)', self.junk_var)
 
         # --- Пороги «Мусора» ---
         self._text(34, 272,
-                   'ПОРОГИ МУСОРА — задать значение в случае помещения файлов-мусора в отдельную папку «Мусор»',
+                   'ЗАДАТЬ ПОРОГИ МУСОРА (предложенные значения выставлены по умолчанию)',
                    '#b0b0b0', 9, bold=True)
         self.photo_kb_var = tk.StringVar(value='2048')
         self.video_sec_var = tk.StringVar(value='10')
@@ -228,8 +228,8 @@ class LauncherApp:
         )
         style.map(
             'TButton',
-            background=[('active', '#3d3d3d'), ('pressed', '#1c1c1c'), ('disabled', '#222222')],
-            foreground=[('disabled', '#777777')],
+            background=[('active', '#c0c0c0'), ('pressed', '#9a9a9a'), ('disabled', '#222222')],
+            foreground=[('active', '#1a1a1a'), ('pressed', '#1a1a1a'), ('disabled', '#777777')],
         )
         style.configure(
             'Accent.TButton',
@@ -239,8 +239,8 @@ class LauncherApp:
         )
         style.map(
             'Accent.TButton',
-            background=[('active', '#4d4d4d'), ('pressed', '#2a2a2a'), ('disabled', '#222222')],
-            foreground=[('disabled', '#777777')],
+            background=[('active', '#c0c0c0'), ('pressed', '#9a9a9a'), ('disabled', '#222222')],
+            foreground=[('active', '#1a1a1a'), ('pressed', '#1a1a1a'), ('disabled', '#777777')],
         )
         style.configure('TCheckbutton', background='#141414', foreground='#d0d0d0', font=self._font(10))
         style.map('TCheckbutton', background=[('active', '#141414')])
@@ -292,16 +292,16 @@ class LauncherApp:
     def _junk_field(self, canvas: tk.Canvas, x: int, y: int, label: str,
                     var: tk.StringVar, unit: str) -> None:
         """Создаёт поле ввода порога «Мусора»: подпись + поле + единица."""
-        self._text(x, y + 6, label, '#c0c0c0', 10)
+        self._text(x, y + 30, label, '#c0c0c0', 10, anchor=tk.SW)
         entry = tk.Entry(
             canvas, textvariable=var, width=8, justify=tk.CENTER,
-            bg='#1c1c1c', fg='#e0e0e0', insertbackground='#e0e0e0',
+            bg='#d4d4d4', fg='#1a1a1a', insertbackground='#1a1a1a',
             relief=tk.FLAT, highlightthickness=1,
-            highlightbackground='#4a4a4a', highlightcolor='#8a8a8a',
+            highlightbackground='#9a9a9a', highlightcolor='#6a6a6a',
             font=self._font_mono(10),
         )
         self._place(entry, x + 70, y, 90, 30)
-        self._text(x + 170, y + 6, unit, '#c0c0c0', 10)
+        self._text(x + 170, y + 30, unit, '#c0c0c0', 10, anchor=tk.SW)
 
     def _checkbox(self, x: int, y: int, text: str, var: tk.BooleanVar) -> None:
         """Создаёт чек-бокс: тёмный квадрат + зелёная галка (canvas)."""
