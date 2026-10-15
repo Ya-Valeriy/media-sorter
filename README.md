@@ -44,6 +44,7 @@ wscript.exe launcher.vbs
 ├── reorganize_media.py      # CLI реорганизации архива
 ├── launcher.py              # GUI-лаунчер
 ├── launcher.vbs             # запуск GUI без окна консоли (Windows)
+├── assets/                  # фоновое изображение GUI
 ├── media_sorter/            # пакет сортировки
 ├── renamer/                 # пакет реорганизации
 ├── tests/                   # тесты (pytest)

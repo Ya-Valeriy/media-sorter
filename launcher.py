@@ -38,8 +38,8 @@ from launcher_common import (
 logger = logging.getLogger(__name__)
 
 # Размеры окна
-WINDOW_WIDTH: int = 500
-WINDOW_HEIGHT: int = 330
+WINDOW_WIDTH: int = 560
+WINDOW_HEIGHT: int = 470
 
 
 class LauncherApp:
@@ -61,67 +61,149 @@ class LauncherApp:
     # --- Построение интерфейса ---
 
     def _build_ui(self) -> None:
-        """Создаёт элементы интерфейса."""
+        """Создаёт элементы интерфейса (чёрно-белая фото-тема)."""
         self.root.title(APP_TITLE)
         self.root.resizable(False, False)
 
-        main = ttk.Frame(self.root, padding=10)
-        main.pack(fill=tk.BOTH, expand=True)
+        # Иконка окна (из фонового фото)
+        icon_path = get_base_dir() / 'icon.ico'
+        if icon_path.exists():
+            try:
+                self.root.iconbitmap(str(icon_path))
+            except tk.TclError:
+                pass
 
-        # Папка с медиафайлами
-        ttk.Label(main, text='Папка с медиафайлами:').grid(row=0, column=0, sticky=tk.W)
+        W, H = WINDOW_WIDTH, WINDOW_HEIGHT
+
+        # --- Фон: холст с чёрно-белым изображением ---
+        canvas = tk.Canvas(self.root, width=W, height=H, highlightthickness=0, bd=0)
+        canvas.pack(fill=tk.BOTH, expand=True)
+        self.canvas = canvas
+
+        bg_path = get_base_dir() / 'assets' / 'background.png'
+        self.bg_photo: Optional[tk.PhotoImage] = None
+        if bg_path.exists():
+            try:
+                self.bg_photo = tk.PhotoImage(file=str(bg_path))
+                canvas.create_image(0, 0, image=self.bg_photo, anchor=tk.NW)
+            except tk.TclError:
+                self.bg_photo = None
+        if self.bg_photo is None:
+            canvas.configure(bg='#141414')
+
+        # --- Стили (тёмная тема) ---
+        style = ttk.Style()
+        try:
+            style.theme_use('clam')
+        except tk.TclError:
+            pass
+        style.configure(
+            'TButton',
+            background='#2b2b2b', foreground='#e8e8e8',
+            bordercolor='#5a5a5a', lightcolor='#2b2b2b', darkcolor='#2b2b2b',
+            padding=(12, 5), font=('Segoe UI', 9),
+        )
+        style.map(
+            'TButton',
+            background=[('active', '#3d3d3d'), ('pressed', '#1c1c1c'), ('disabled', '#222222')],
+            foreground=[('disabled', '#777777')],
+        )
+        style.configure(
+            'Accent.TButton',
+            background='#3a3a3a', foreground='#ffffff',
+            bordercolor='#9a9a9a', lightcolor='#3a3a3a', darkcolor='#3a3a3a',
+            font=('Segoe UI', 10, 'bold'),
+        )
+        style.map(
+            'Accent.TButton',
+            background=[('active', '#4d4d4d'), ('pressed', '#2a2a2a'), ('disabled', '#222222')],
+            foreground=[('disabled', '#777777')],
+        )
+        style.configure('TCheckbutton', background='#141414', foreground='#d0d0d0', font=('Segoe UI', 9))
+        style.map('TCheckbutton', background=[('active', '#141414')])
+        style.configure(
+            'TProgressbar',
+            background='#9a9a9a', troughcolor='#1e1e1e',
+            bordercolor='#333333', lightcolor='#9a9a9a', darkcolor='#9a9a9a',
+        )
+
+        # --- Заголовок ---
+        canvas.create_text(W // 2, 20, text=APP_TITLE, fill='#ffffff',
+                           font=('Segoe UI', 16, 'bold'))
+        canvas.create_text(W // 2, 44, text='чёрно-белый фотоархив', fill='#9a9a9a',
+                           font=('Segoe UI', 9, 'italic'))
+
+        # --- Папка с медиафайлами ---
+        canvas.create_text(30, 72, text='ПАПКА С МЕДИАФАЙЛАМИ', anchor=tk.W,
+                           fill='#b0b0b0', font=('Segoe UI', 8, 'bold'))
         self.source_var = tk.StringVar(value=self.config.get('last_source', ''))
-        ttk.Entry(main, textvariable=self.source_var, state='readonly', width=38).grid(
-            row=1, column=0, sticky=tk.EW, padx=(0, 5),
+        source_entry = tk.Entry(
+            canvas, textvariable=self.source_var, state='readonly',
+            bg='#1c1c1c', fg='#e0e0e0', readonlybackground='#1c1c1c',
+            insertbackground='#e0e0e0', relief=tk.FLAT,
+            highlightthickness=1, highlightbackground='#4a4a4a', highlightcolor='#8a8a8a',
+            font=('Consolas', 9),
         )
-        ttk.Button(main, text='Обзор...', command=self._browse_source).grid(row=1, column=1)
+        self._place(source_entry, 30, 90, 400, 26)
+        self._place(ttk.Button(canvas, text='Обзор...', command=self._browse_source), 440, 88, 90, 30)
 
-        # Папка назначения
-        ttk.Label(main, text='Папка назначения:').grid(row=2, column=0, sticky=tk.W, pady=(8, 0))
+        # --- Папка назначения ---
+        canvas.create_text(30, 128, text='ПАПКА НАЗНАЧЕНИЯ', anchor=tk.W,
+                           fill='#b0b0b0', font=('Segoe UI', 8, 'bold'))
         self.dest_var = tk.StringVar(value=self.config.get('default_destination', ''))
-        ttk.Entry(main, textvariable=self.dest_var, width=38).grid(
-            row=3, column=0, sticky=tk.EW, padx=(0, 5),
+        dest_entry = tk.Entry(
+            canvas, textvariable=self.dest_var,
+            bg='#1c1c1c', fg='#e0e0e0',
+            insertbackground='#e0e0e0', relief=tk.FLAT,
+            highlightthickness=1, highlightbackground='#4a4a4a', highlightcolor='#8a8a8a',
+            font=('Consolas', 9),
         )
-        ttk.Button(main, text='Обзор...', command=self._browse_dest).grid(row=3, column=1)
+        self._place(dest_entry, 30, 146, 400, 26)
+        self._place(ttk.Button(canvas, text='Обзор...', command=self._browse_dest), 440, 144, 90, 30)
 
-        # Флаги
+        # --- Флаги ---
         flags = self.config.get('default_flags', {})
         self.dry_run_var = tk.BooleanVar(value=bool(flags.get('dry_run_default', False)))
         self.duplicates_var = tk.BooleanVar(value=bool(flags.get('check_duplicates', True)))
         self.junk_var = tk.BooleanVar(value=bool(flags.get('junk_folder', True)))
-        ttk.Checkbutton(main, text='Пробный прогон (dry-run)', variable=self.dry_run_var).grid(
-            row=4, column=0, columnspan=2, sticky=tk.W, pady=(8, 0),
-        )
-        ttk.Checkbutton(main, text='Проверять дубликаты', variable=self.duplicates_var).grid(
-            row=5, column=0, columnspan=2, sticky=tk.W,
-        )
-        ttk.Checkbutton(main, text='Мелкие файлы в Мусор', variable=self.junk_var).grid(
-            row=6, column=0, columnspan=2, sticky=tk.W,
-        )
+        self._place(ttk.Checkbutton(canvas, text='Пробный прогон (dry-run)', variable=self.dry_run_var), 30, 186)
+        self._place(ttk.Checkbutton(canvas, text='Проверять дубликаты', variable=self.duplicates_var), 30, 210)
+        self._place(ttk.Checkbutton(canvas, text='Мелкие файлы в Мусор', variable=self.junk_var), 30, 234)
 
-        # Кнопки
-        buttons = ttk.Frame(main)
-        buttons.grid(row=7, column=0, columnspan=2, sticky=tk.EW, pady=(10, 0))
-        self.run_button = ttk.Button(buttons, text='Запустить', command=self._start_sorting)
-        self.run_button.pack(side=tk.LEFT)
-        ttk.Button(buttons, text='Отмена', command=self._on_close).pack(side=tk.LEFT, padx=(5, 0))
-        self.report_button = ttk.Button(buttons, text='Открыть отчёт', command=self._open_report, state=tk.DISABLED)
-        self.report_button.pack(side=tk.LEFT, padx=(5, 0))
-        self.dest_button = ttk.Button(buttons, text='Открыть папку', command=self._open_dest, state=tk.DISABLED)
-        self.dest_button.pack(side=tk.LEFT, padx=(5, 0))
+        # --- Кнопки ---
+        self.run_button = ttk.Button(canvas, text='Запустить', style='Accent.TButton',
+                                     command=self._start_sorting)
+        self._place(self.run_button, 30, 268, 110, 32)
+        self._place(ttk.Button(canvas, text='Отмена', command=self._on_close), 150, 268, 90, 32)
+        self.report_button = ttk.Button(canvas, text='Открыть отчёт', command=self._open_report,
+                                        state=tk.DISABLED)
+        self._place(self.report_button, 250, 268, 110, 32)
+        self.dest_button = ttk.Button(canvas, text='Открыть папку', command=self._open_dest,
+                                      state=tk.DISABLED)
+        self._place(self.dest_button, 370, 268, 110, 32)
 
-        # Прогресс
-        self.progress = ttk.Progressbar(main, mode='indeterminate')
-        self.progress.grid(row=8, column=0, columnspan=2, sticky=tk.EW, pady=(10, 0))
+        # --- Прогресс ---
+        self.progress = ttk.Progressbar(canvas, mode='indeterminate')
+        self._place(self.progress, 30, 312, 500, 14)
 
-        # Лог
+        # --- Лог ---
         self.log_text = scrolledtext.ScrolledText(
-            main, height=5, state=tk.DISABLED, font=('Consolas', 9),
+            canvas, height=6, state=tk.DISABLED,
+            bg='#101010', fg='#c8c8c8', insertbackground='#c8c8c8',
+            relief=tk.FLAT, highlightthickness=1, highlightbackground='#3a3a3a',
+            highlightcolor='#6a6a6a', font=('Consolas', 9), padx=6, pady=4,
         )
-        self.log_text.grid(row=9, column=0, columnspan=2, sticky=tk.NSEW, pady=(8, 0))
+        self._place(self.log_text, 30, 338, 500, 118)
 
-        main.columnconfigure(0, weight=1)
-        main.rowconfigure(9, weight=1)
+    def _place(self, widget: tk.Widget, x: int, y: int,
+               w: Optional[int] = None, h: Optional[int] = None) -> None:
+        """Размещает виджет на фоновом холсте."""
+        opts: Dict[str, Any] = {'window': widget, 'anchor': tk.NW}
+        if w is not None:
+            opts['width'] = w
+        if h is not None:
+            opts['height'] = h
+        self.canvas.create_window(x, y, **opts)
 
     def _center_window(self, width: int, height: int) -> None:
         """Размещает окно по центру экрана."""
@@ -399,37 +481,10 @@ class LauncherApp:
         self.root.destroy()
 
 
-def _relaunch_with_pythonw() -> None:
-    """
-    Перезапускает GUI через pythonw.exe, чтобы не открывалось окно консоли.
-
-    Если скрипт запущен консольным python.exe, а рядом есть pythonw.exe
-    (безконсольная версия) — перезапускаемся через него и завершаем
-    текущий процесс. Окно консоли при этом не появляется.
-    """
-    if sys.platform != 'win32':
-        return
-    exe = Path(sys.executable)
-    if exe.name.lower() != 'python.exe':
-        return
-    pythonw = exe.with_name('pythonw.exe')
-    if not pythonw.exists():
-        return
-    try:
-        subprocess.Popen(
-            [str(pythonw), *sys.argv],
-            creationflags=subprocess.CREATE_NO_WINDOW,
-        )
-    except OSError:
-        return  # не удалось перезапуститься — продолжаем в консоли
-    sys.exit(0)
-
-
 def main() -> int:
     """Точка входа GUI-обёртки."""
     from launcher_common import setup_logging
 
-    _relaunch_with_pythonw()
     setup_logging()
     config = load_config()
     logger.info('Запуск %s (ОС: %s)', APP_TITLE, platform.system())
