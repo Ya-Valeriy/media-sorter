@@ -47,32 +47,47 @@ def detect_messenger(filename: str) -> Optional[str]:
 
 def is_junk_file(
     path: Path,
-    photo_max_bytes: int,
-    video_max_seconds: float,
+    photo_max_bytes: Optional[int],
+    video_max_seconds: Optional[float],
+    video_max_bytes: Optional[int],
 ) -> Optional[str]:
     """
     Определяет, является ли файл «мусором».
 
-    Фото (IMAGE_EXTENSIONS) размером <= photo_max_bytes и видео
-    (VIDEO_EXTENSIONS) длительностью <= video_max_seconds считаются мусором.
+    Фото: размер <= photo_max_bytes (если ограничение задано).
+    Видео: мусор, если длительность <= video_max_seconds ИЛИ размер
+    <= video_max_bytes — что достигнется первым. Если задано только
+    одно ограничение — проверка по нему. None означает «не задано».
 
-    Возвращает причину ('мелкий файл (фото <= 2 МБ)' /
-    'короткое видео (<= 10 с)') или None, если файл не является мусором.
+    Возвращает причину(ы) или None, если файл не является мусором.
     """
     ext = path.suffix.lower()
-    if ext in IMAGE_EXTENSIONS:
+    reasons: list[str] = []
+
+    if ext in IMAGE_EXTENSIONS and photo_max_bytes is not None:
         try:
             size = path.stat().st_size
         except OSError as exc:
             logger.warning('Не удалось получить размер %s: %s', path, exc)
-            return None
-        if size <= photo_max_bytes:
-            return f'мелкий файл (фото <= {photo_max_bytes / (1024 * 1024):g} МБ)'
+        else:
+            if size <= photo_max_bytes:
+                reasons.append(f'мелкий файл (фото <= {photo_max_bytes / 1024:g} КБ)')
+
     if ext in VIDEO_EXTENSIONS:
-        duration = extract_video_duration(path)
-        if duration is not None and duration <= video_max_seconds:
-            return f'короткое видео (<= {video_max_seconds:g} с)'
-    return None
+        if video_max_bytes is not None:
+            try:
+                size = path.stat().st_size
+            except OSError as exc:
+                logger.warning('Не удалось получить размер %s: %s', path, exc)
+            else:
+                if size <= video_max_bytes:
+                    reasons.append(f'мелкое видео (<= {video_max_bytes / (1024 * 1024):g} МБ)')
+        if video_max_seconds is not None:
+            duration = extract_video_duration(path)
+            if duration is not None and duration <= video_max_seconds:
+                reasons.append(f'короткое видео (<= {video_max_seconds:g} с)')
+
+    return '; '.join(reasons) if reasons else None
 
 
 def build_renamed_filename(filename: str, date: Optional[datetime]) -> str:

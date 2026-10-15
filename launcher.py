@@ -39,7 +39,7 @@ logger = logging.getLogger(__name__)
 
 # Размеры окна
 WINDOW_WIDTH: int = 560
-WINDOW_HEIGHT: int = 470
+WINDOW_HEIGHT: int = 510
 
 
 class LauncherApp:
@@ -167,24 +167,34 @@ class LauncherApp:
         self.duplicates_var = tk.BooleanVar(value=bool(flags.get('check_duplicates', True)))
         self.junk_var = tk.BooleanVar(value=bool(flags.get('junk_folder', True)))
         self._place(ttk.Checkbutton(canvas, text='Пробный прогон (dry-run)', variable=self.dry_run_var), 30, 186)
-        self._place(ttk.Checkbutton(canvas, text='Проверять дубликаты', variable=self.duplicates_var), 30, 210)
-        self._place(ttk.Checkbutton(canvas, text='Мелкие файлы в Мусор', variable=self.junk_var), 30, 234)
+        self._place(ttk.Checkbutton(canvas, text='Проверять дубликаты', variable=self.duplicates_var), 30, 208)
+        self._place(ttk.Checkbutton(canvas, text='Мелкие файлы в Мусор', variable=self.junk_var), 30, 230)
+
+        # --- Пороги «Мусора» ---
+        canvas.create_text(30, 256, text='ПОРОГИ МУСОРА (0 — не задано)', anchor=tk.W,
+                           fill='#b0b0b0', font=('Segoe UI', 8, 'bold'))
+        self.photo_kb_var = tk.StringVar(value='2048')
+        self.video_sec_var = tk.StringVar(value='10')
+        self.video_mb_var = tk.StringVar(value='0')
+        self._junk_field(canvas, 30, 276, 'Фото ≤', self.photo_kb_var, 'КБ')
+        self._junk_field(canvas, 200, 276, 'Видео ≤', self.video_sec_var, 'с')
+        self._junk_field(canvas, 370, 276, 'Видео ≤', self.video_mb_var, 'МБ')
 
         # --- Кнопки ---
         self.run_button = ttk.Button(canvas, text='Запустить', style='Accent.TButton',
                                      command=self._start_sorting)
-        self._place(self.run_button, 30, 268, 110, 32)
-        self._place(ttk.Button(canvas, text='Отмена', command=self._on_close), 150, 268, 90, 32)
+        self._place(self.run_button, 30, 312, 110, 32)
+        self._place(ttk.Button(canvas, text='Отмена', command=self._on_close), 150, 312, 90, 32)
         self.report_button = ttk.Button(canvas, text='Открыть отчёт', command=self._open_report,
                                         state=tk.DISABLED)
-        self._place(self.report_button, 250, 268, 110, 32)
+        self._place(self.report_button, 250, 312, 110, 32)
         self.dest_button = ttk.Button(canvas, text='Открыть папку', command=self._open_dest,
                                       state=tk.DISABLED)
-        self._place(self.dest_button, 370, 268, 110, 32)
+        self._place(self.dest_button, 370, 312, 110, 32)
 
         # --- Прогресс ---
         self.progress = ttk.Progressbar(canvas, mode='indeterminate')
-        self._place(self.progress, 30, 312, 500, 14)
+        self._place(self.progress, 30, 356, 500, 14)
 
         # --- Лог ---
         self.log_text = scrolledtext.ScrolledText(
@@ -193,7 +203,7 @@ class LauncherApp:
             relief=tk.FLAT, highlightthickness=1, highlightbackground='#3a3a3a',
             highlightcolor='#6a6a6a', font=('Consolas', 9), padx=6, pady=4,
         )
-        self._place(self.log_text, 30, 338, 500, 118)
+        self._place(self.log_text, 30, 382, 500, 114)
 
     def _place(self, widget: tk.Widget, x: int, y: int,
                w: Optional[int] = None, h: Optional[int] = None) -> None:
@@ -204,6 +214,22 @@ class LauncherApp:
         if h is not None:
             opts['height'] = h
         self.canvas.create_window(x, y, **opts)
+
+    def _junk_field(self, canvas: tk.Canvas, x: int, y: int, label: str,
+                    var: tk.StringVar, unit: str) -> None:
+        """Создаёт поле ввода порога «Мусора»: подпись + поле + единица."""
+        canvas.create_text(x, y + 4, text=label, anchor=tk.W,
+                           fill='#c0c0c0', font=('Segoe UI', 9))
+        entry = tk.Entry(
+            canvas, textvariable=var, width=6, justify=tk.CENTER,
+            bg='#1c1c1c', fg='#e0e0e0', insertbackground='#e0e0e0',
+            relief=tk.FLAT, highlightthickness=1,
+            highlightbackground='#4a4a4a', highlightcolor='#8a8a8a',
+            font=('Consolas', 9),
+        )
+        self._place(entry, x + 52, y, 56, 24)
+        canvas.create_text(x + 114, y + 4, text=unit, anchor=tk.W,
+                           fill='#c0c0c0', font=('Segoe UI', 9))
 
     def _center_window(self, width: int, height: int) -> None:
         """Размещает окно по центру экрана."""
@@ -291,6 +317,21 @@ class LauncherApp:
             cmd.append('--check-duplicates')
         if not self.junk_var.get():
             cmd.append('--no-junk')
+        else:
+            # Пороги «Мусора» (0 — не задано, используется значение по умолчанию)
+            for flag, var in (
+                ('--photo-junk-max-kb', self.photo_kb_var),
+                ('--video-junk-max-sec', self.video_sec_var),
+                ('--video-junk-max-mb', self.video_mb_var),
+            ):
+                value = var.get().strip().replace(',', '.')
+                if not value:
+                    continue
+                try:
+                    float(value)
+                except ValueError:
+                    continue
+                cmd += [flag, value]
 
         self._append_log(f'>>> Запуск: {" ".join(cmd)}\n')
         logger.info('Запуск: %s', ' '.join(cmd))
