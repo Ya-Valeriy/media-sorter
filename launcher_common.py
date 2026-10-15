@@ -126,14 +126,17 @@ def setup_logging() -> None:
     logs_dir = get_logs_dir()
     logs_dir.mkdir(parents=True, exist_ok=True)
     log_path = logs_dir / LOG_FILE
+    handlers: List[logging.Handler] = [logging.FileHandler(log_path, encoding='utf-8')]
+    # Под pythonw.exe (запуск без консоли) sys.stdout/sys.stderr равны None —
+    # консольный обработчик добавляем только если консоль реально есть.
+    stream = sys.stderr if sys.stderr is not None else sys.stdout
+    if stream is not None:
+        handlers.append(logging.StreamHandler(stream))
     logging.basicConfig(
         level=logging.INFO,
         format='%(asctime)s | %(levelname)-8s | %(message)s',
         datefmt='%Y-%m-%d %H:%M:%S',
-        handlers=[
-            logging.FileHandler(log_path, encoding='utf-8'),
-            logging.StreamHandler(sys.stdout),
-        ],
+        handlers=handlers,
     )
 
 

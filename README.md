@@ -32,6 +32,9 @@ python reorganize_media.py -r "D:\Фото\Архив" --dry-run
 
 # GUI-лаунчер
 python launcher.py
+
+# GUI-лаунчер без окна консоли (Windows)
+wscript.exe launcher.vbs
 ```
 
 ## Структура
@@ -40,6 +43,7 @@ python launcher.py
 ├── sort_media.py            # CLI сортировки по дате
 ├── reorganize_media.py      # CLI реорганизации архива
 ├── launcher.py              # GUI-лаунчер
+├── launcher.vbs             # запуск GUI без окна консоли (Windows)
 ├── media_sorter/            # пакет сортировки
 ├── renamer/                 # пакет реорганизации
 ├── tests/                   # тесты (pytest)
