@@ -175,33 +175,33 @@ class LauncherApp:
         self._checkbox(34, 241, 'Отсортировать мусор (создадим папку Мусор)', self.junk_var)
 
         # --- Пороги «Мусора» ---
-        self._text(34, 272,
+        self._text(34, 285,
                    'ЗАДАТЬ ПОРОГИ МУСОРА (предложенные значения выставлены по умолчанию)',
                    '#b0b0b0', 9, bold=True)
         self.photo_kb_var = tk.StringVar(value='2048')
         self.video_sec_var = tk.StringVar(value='10')
         self.video_kb_var = tk.StringVar(value='0')
-        self._junk_field(canvas, 34, 292, 'Фото ≤', self.photo_kb_var, 'КБ')
-        self._junk_field(canvas, 320, 292, 'Видео ≤', self.video_sec_var, 'сек.')
-        self._junk_field(canvas, 606, 292, 'Видео ≤', self.video_kb_var, 'КБ')
+        self._junk_field(canvas, 34, 305, 'Фото ≤', self.photo_kb_var, 'КБ')
+        self._junk_field(canvas, 320, 305, 'Видео ≤', self.video_sec_var, 'сек.')
+        self._junk_field(canvas, 606, 305, 'Видео ≤', self.video_kb_var, 'КБ')
 
         # --- Кнопки ---
         self.run_button = ttk.Button(canvas, text='Запустить', style='Accent.TButton',
                                      command=self._start_sorting)
-        self._place(self.run_button, 34, 340, 134, 36)
-        self._place(ttk.Button(canvas, text='Отмена', command=self._on_close), 185, 340, 109, 36)
+        self._place(self.run_button, 34, 355, 134, 36)
+        self._place(ttk.Button(canvas, text='Отмена', command=self._on_close), 185, 355, 109, 36)
         self.report_button = ttk.Button(canvas, text='Открыть отчёт', command=self._open_report,
                                         state=tk.DISABLED)
-        self._place(self.report_button, 311, 340, 134, 36)
+        self._place(self.report_button, 311, 355, 134, 36)
         self.dest_button = ttk.Button(canvas, text='Открыть папку', command=self._open_dest,
                                       state=tk.DISABLED)
-        self._place(self.dest_button, 462, 340, 134, 36)
+        self._place(self.dest_button, 462, 355, 134, 36)
         self._place(ttk.Button(canvas, text='⛶ На весь экран', command=self._toggle_fullscreen),
-                    610, 340, 196, 36)
+                    610, 355, 196, 36)
 
         # --- Прогресс ---
         self.progress = ttk.Progressbar(canvas, mode='indeterminate')
-        self._place(self.progress, 34, 395, 773, 14)
+        self._place(self.progress, 34, 410, 773, 14)
 
         # --- Лог (30% окна) ---
         self.log_text = scrolledtext.ScrolledText(
