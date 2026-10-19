@@ -140,7 +140,7 @@ class LauncherApp:
         self._text(420, 42, 'ПОМОЩНИК СОРТИРОВКИ МЕДИА', '#9a9a9a', 10, anchor=tk.CENTER)
 
         # --- Папка с медиафайлами ---
-        self._text(34, 70, 'ПАПКА С МЕДИАФАЙЛАМИ', '#b0b0b0', 9, bold=True)
+        self._text(34, 80, 'ПАПКА С МЕДИАФАЙЛАМИ', '#b0b0b0', 9, bold=True)
         self.source_var = tk.StringVar(value=self.config.get('last_source', ''))
         source_entry = tk.Entry(
             canvas, textvariable=self.source_var, state='readonly',
@@ -153,7 +153,7 @@ class LauncherApp:
         self._place(ttk.Button(canvas, text='Обзор...', command=self._browse_source), 655, 87, 151, 32)
 
         # --- Папка назначения ---
-        self._text(34, 130, 'ПАПКА НАЗНАЧЕНИЯ', '#b0b0b0', 9, bold=True)
+        self._text(34, 140, 'ПАПКА НАЗНАЧЕНИЯ', '#b0b0b0', 9, bold=True)
         self.dest_var = tk.StringVar(value=self.config.get('default_destination', ''))
         dest_entry = tk.Entry(
             canvas, textvariable=self.dest_var,
@@ -170,38 +170,42 @@ class LauncherApp:
         self.dry_run_var = tk.BooleanVar(value=bool(flags.get('dry_run_default', False)))
         self.duplicates_var = tk.BooleanVar(value=bool(flags.get('check_duplicates', True)))
         self.junk_var = tk.BooleanVar(value=bool(flags.get('junk_folder', True)))
+        self.rename_var = tk.BooleanVar(value=bool(flags.get('rename_by_date', True)))
         self._checkbox(34, 195, 'Пробный прогон (ничего не удалим и не создадим, только проверка)', self.dry_run_var)
-        self._checkbox(34, 218, 'Отсортировать дубликаты (создадим папку Дубликаты)', self.duplicates_var)
-        self._checkbox(34, 241, 'Отсортировать мусор (создадим папку Мусор)', self.junk_var)
+        self._checkbox(34, 215, 'Отсортировать дубликаты (создадим папку Дубликаты)', self.duplicates_var)
+        self._checkbox(34, 235, 'Переименовать по дате съёмки (переименуем по метаданным / дате съёмки)', self.rename_var)
+        self.negative_var = tk.BooleanVar(value=bool(flags.get('negative_folder', True)))
+        self._checkbox(34, 255, 'Отсортировать негативы (создадим папку Негативы и поместим в нее файлы RAW)', self.negative_var)
+        self._checkbox(34, 275, 'Отсортировать мусор (создадим папку Мусор)', self.junk_var)
 
         # --- Пороги «Мусора» ---
-        self._text(34, 285,
+        self._text(34, 305,
                    'ЗАДАТЬ ПОРОГИ МУСОРА (предложенные значения выставлены по умолчанию)',
                    '#b0b0b0', 9, bold=True)
         self.photo_kb_var = tk.StringVar(value='2048')
         self.video_sec_var = tk.StringVar(value='10')
         self.video_kb_var = tk.StringVar(value='0')
-        self._junk_field(canvas, 34, 305, 'Фото ≤', self.photo_kb_var, 'КБ')
-        self._junk_field(canvas, 320, 305, 'Видео ≤', self.video_sec_var, 'сек.')
-        self._junk_field(canvas, 606, 305, 'Видео ≤', self.video_kb_var, 'КБ')
+        self._junk_field(canvas, 34, 325, 'Фото ≤', self.photo_kb_var, 'КБ')
+        self._junk_field(canvas, 320, 325, 'Видео ≤', self.video_sec_var, 'сек.')
+        self._junk_field(canvas, 606, 325, 'Видео ≤', self.video_kb_var, 'КБ')
 
         # --- Кнопки ---
         self.run_button = ttk.Button(canvas, text='Запустить', style='Accent.TButton',
                                      command=self._start_sorting)
-        self._place(self.run_button, 34, 355, 134, 36)
-        self._place(ttk.Button(canvas, text='Отмена', command=self._on_close), 185, 355, 109, 36)
+        self._place(self.run_button, 34, 375, 134, 36)
+        self._place(ttk.Button(canvas, text='Отмена', command=self._on_close), 185, 375, 109, 36)
         self.report_button = ttk.Button(canvas, text='Открыть отчёт', command=self._open_report,
                                         state=tk.DISABLED)
-        self._place(self.report_button, 311, 355, 134, 36)
+        self._place(self.report_button, 311, 375, 134, 36)
         self.dest_button = ttk.Button(canvas, text='Открыть папку', command=self._open_dest,
                                       state=tk.DISABLED)
-        self._place(self.dest_button, 462, 355, 134, 36)
+        self._place(self.dest_button, 462, 375, 134, 36)
         self._place(ttk.Button(canvas, text='⛶ На весь экран', command=self._toggle_fullscreen),
-                    610, 355, 196, 36)
+                    610, 375, 196, 36)
 
         # --- Прогресс ---
         self.progress = ttk.Progressbar(canvas, mode='indeterminate')
-        self._place(self.progress, 34, 410, 773, 14)
+        self._place(self.progress, 34, 418, 773, 14)
 
         # --- Лог (30% окна) ---
         self.log_text = scrolledtext.ScrolledText(
@@ -210,7 +214,7 @@ class LauncherApp:
             relief=tk.FLAT, highlightthickness=1, highlightbackground='#3a3a3a',
             highlightcolor='#6a6a6a', font=self._font_mono(10), padx=6, pady=4,
         )
-        self._place(self.log_text, 34, 438, 773, 199)
+        self._place(self.log_text, 34, 444, 773, 176)
 
     def _setup_styles(self) -> None:
         """Настраивает тёмную тему ttk с учётом масштаба."""
@@ -292,16 +296,16 @@ class LauncherApp:
     def _junk_field(self, canvas: tk.Canvas, x: int, y: int, label: str,
                     var: tk.StringVar, unit: str) -> None:
         """Создаёт поле ввода порога «Мусора»: подпись + поле + единица."""
-        self._text(x, y + 30, label, '#c0c0c0', 10, anchor=tk.SW)
+        self._text(x, y + 22, label, '#c0c0c0', 10, anchor=tk.SW)
         entry = tk.Entry(
-            canvas, textvariable=var, width=8, justify=tk.CENTER,
+            canvas, textvariable=var, width=6, justify=tk.CENTER,
             bg='#d4d4d4', fg='#1a1a1a', insertbackground='#1a1a1a',
             relief=tk.FLAT, highlightthickness=1,
             highlightbackground='#9a9a9a', highlightcolor='#6a6a6a',
             font=self._font_mono(10),
         )
-        self._place(entry, x + 70, y, 90, 30)
-        self._text(x + 170, y + 30, unit, '#c0c0c0', 10, anchor=tk.SW)
+        self._place(entry, x + 70, y, 68, 22)
+        self._text(x + 145, y + 22, unit, '#c0c0c0', 10, anchor=tk.SW)
 
     def _checkbox(self, x: int, y: int, text: str, var: tk.BooleanVar) -> None:
         """Создаёт чек-бокс: тёмный квадрат + зелёная галка (canvas)."""
@@ -496,6 +500,10 @@ class LauncherApp:
                 except ValueError:
                     continue
                 cmd += [flag, value]
+        if not self.negative_var.get():
+            cmd.append('--no-negative')
+        if not self.rename_var.get():
+            cmd.append('--no-rename')
 
         self._append_log(f'>>> Запуск: {" ".join(cmd)}\n')
         logger.info('Запуск: %s', ' '.join(cmd))
