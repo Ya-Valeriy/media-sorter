@@ -29,3 +29,5 @@ Desktop.ini
 # Локальные файлы
 README.txt
 ui_screenshot.png
+# Kimi project memory
+.kimi-memory/

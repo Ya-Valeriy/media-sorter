@@ -20,12 +20,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
-from .date_extractor import SUPPORTED_EXTENSIONS, extract_gps_coordinates, get_creation_date
+from .date_extractor import RAW_EXTENSIONS, SUPPORTED_EXTENSIONS, get_creation_date, is_scanned_negative
 from .hash_utils import get_file_hash
 from .mover import (
     FOLDER_DUPLICATES,
     FOLDER_JUNK,
-    FOLDER_UNDEFINED,
+    FOLDER_NEGATIVES,
     build_destination_path,
     detect_messenger,
     is_junk_file,
@@ -37,9 +37,6 @@ logger = logging.getLogger(__name__)
 
 # Порог количества файлов, при котором включается многопоточность
 THREADING_THRESHOLD: int = 10_000
-
-# Шаг поиска по геолокации: ~100 метров (0.001 градуса)
-GPS_NEIGHBORHOOD: float = 0.001
 
 
 @dataclass
@@ -92,6 +89,21 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         '--no-junk',
         action='store_true',
         help='Не выделять мелкие файлы в отдельную папку',
+    )
+    parser.add_argument(
+        '--no-rename',
+        action='store_true',
+        help='Не переименовывать файлы по дате съёмки (имена сохраняются)',
+    )
+    parser.add_argument(
+        '--negative-folder',
+        default='Негативы',
+        help='Имя папки для сканированных негативов (по умолчанию: Негативы)',
+    )
+    parser.add_argument(
+        '--no-negative',
+        action='store_true',
+        help='Не определять и не выделять сканированные негативы',
     )
     parser.add_argument('--log-file', default='sort_media.log', help='Путь к файлу лога (по умолчанию: sort_media.log)')
     parser.add_argument('--report-file', default='report.csv', help='Путь к CSV-отчёту (по умолчанию: report.csv)')
@@ -177,55 +189,30 @@ def _iter_with_progress(items: List[Path], desc: str = ''):
         return items
 
 
-def _gps_key(coords: Tuple[float, float]) -> Tuple[int, int]:
-    """Округляет координаты до ~100 метров (3 знака после запятой)."""
-    lat, lon = coords
-    return round(lat, 3), round(lon, 3)
-
-
-def _restore_date_from_gps(
-    coords: Tuple[float, float],
-    gps_index: Dict[Tuple[int, int], datetime],
-    lock: threading.Lock,
-) -> Optional[Tuple[datetime, str, bool]]:
-    """
-    Ищет дату среди уже обработанных файлов с той же геолокацией (±100 м).
-
-    Возвращает (дата, 'gps', True) или None.
-    """
-    lat, lon = coords
-    lat_key = round(lat, 3)
-    lon_key = round(lon, 3)
-    with lock:
-        for dlat in (-GPS_NEIGHBORHOOD, 0.0, GPS_NEIGHBORHOOD):
-            for dlon in (-GPS_NEIGHBORHOOD, 0.0, GPS_NEIGHBORHOOD):
-                key = (round(lat_key + dlat, 3), round(lon_key + dlon, 3))
-                if key in gps_index:
-                    return gps_index[key], 'gps', True
-    return None
-
-
 def _make_duplicate_result(
     file_path: Path,
     dest: Path,
     digest: str,
     warnings: List[str],
     args: argparse.Namespace,
+    date: Optional[datetime] = None,
 ) -> ProcessResult:
-    """Формирует результат для файла-дубликата (перемещение в «Дубликаты»)."""
-    dup_dest = build_destination_path(dest, file_path.name, None, FOLDER_DUPLICATES)
+    """Формирует результат для файла-дубликата (перемещение в «Дубликаты») с переименованием по дате."""
+    dup_dest = build_destination_path(
+        dest, file_path.name, date, FOLDER_DUPLICATES, rename_by_date=True
+    )
     final_path, status = move_file_safely(file_path, dup_dest, args.dry_run)
     record = {
         'source_path': str(file_path),
         'dest_path': str(final_path),
         'date_source': 'duplicate',
-        'date_value': '',
-        'is_approximate': True,
+        'date_value': date.isoformat() if date else '',
+        'is_approximate': False,
         'warnings': '; '.join(warnings + ['дубликат (MD5 совпадает)']),
         'hash': digest,
     }
     logger.warning('Дубликат: %s (MD5: %s) -> %s', file_path, digest, final_path)
-    return ProcessResult(record=record, category='duplicate')
+    return ProcessResult(record=record, category='duplicate', date=date)
 
 
 def process_single_file(
@@ -234,7 +221,6 @@ def process_single_file(
     dest: Path,
     args: argparse.Namespace,
     seen_hashes: Set[str],
-    gps_index: Dict[Tuple[int, int], datetime],
     lock: threading.Lock,
 ) -> ProcessResult:
     """
@@ -274,33 +260,40 @@ def process_single_file(
             )
             return ProcessResult(record=record, category='junk', date=None, messenger=messenger)
 
-    # 3. Определяем дату
+    # 3. Проверка на сканированный негатив (RAW от сканера)
+    is_negative = False
+    if not args.no_negative and file_path.suffix.lower() in RAW_EXTENSIONS:
+        try:
+            is_negative = is_scanned_negative(file_path)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug('Не удалось проверить негатив %s: %s', file_path, exc)
+
+    if is_negative:
+        neg_dest = build_destination_path(dest, filename, None, FOLDER_NEGATIVES)
+        final_path, status = move_file_safely(file_path, neg_dest, args.dry_run)
+        record = {
+            'source_path': str(file_path),
+            'dest_path': str(final_path),
+            'date_source': '',
+            'date_value': '',
+            'is_approximate': False,
+            'warnings': 'сканированный негатив (RAW)',
+        }
+        logger.info(
+            '%s: %s -> %s (негатив)',
+            'ПЛАНИРУЕТСЯ' if args.dry_run else 'ПЕРЕМЕЩЁН',
+            file_path,
+            final_path,
+        )
+        return ProcessResult(record=record, category='negative', date=None, messenger=messenger)
+
+    # 4. Определяем дату съёмки (только метаданные или имя файла, без mtime)
     date, date_source, is_approximate = get_creation_date(file_path)
 
-    # 3. Если даты нет — пробуем восстановить по геолокации
-    if date is None:
-        gps = extract_gps_coordinates(file_path)
-        if gps:
-            restored = _restore_date_from_gps(gps, gps_index, lock)
-            if restored is not None:
-                date, date_source, is_approximate = restored
-                warnings.append('дата восстановлена по геолокации')
-
-    # 4. Обновляем GPS-индекс (для последующих файлов)
-    if date is not None:
-        gps = extract_gps_coordinates(file_path)
-        if gps:
-            key = _gps_key(gps)
-            with lock:
-                gps_index.setdefault(key, date)
-
-    # 5. Формируем путь назначения
-    if date is None:
-        special_folder = FOLDER_UNDEFINED
-    else:
-        special_folder = None
-
-    dest_path = build_destination_path(dest, filename, date, special_folder, rename_by_date=True)
+    # 5. Формируем путь назначения (переименование по дате — если включено)
+    dest_path = build_destination_path(
+        dest, filename, date, None, rename_by_date=not args.no_rename,
+    )
 
     # 6. Проверка дубликатов
     if args.check_duplicates:
@@ -370,6 +363,10 @@ def accumulate_result(
             stats['junk'] += 1
             if result.messenger:
                 stats['messengers'] += 1
+        elif result.category == 'negative':
+            stats['negatives'] += 1
+            if result.messenger:
+                stats['messengers'] += 1
         elif result.category == 'error':
             stats['errors'] += 1
             errors.append({
@@ -401,7 +398,6 @@ def process_files(
     Возвращает (records, duplicates, errors, stats).
     """
     lock = threading.Lock()
-    gps_index: Dict[Tuple[int, int], datetime] = {}
 
     stats: Dict[str, Any] = {
         'total': len(files),
@@ -410,6 +406,7 @@ def process_files(
         'errors': 0,
         'undefined': 0,
         'messengers': 0,
+        'negatives': 0,
         'junk': 0,
         'by_year': Counter(),
         'by_month': Counter(),
@@ -424,7 +421,7 @@ def process_files(
         logger.info('Многопоточная обработка: %d потоков', args.workers)
 
     def process_one(path: Path) -> ProcessResult:
-        return process_single_file(path, source, dest, args, seen_hashes, gps_index, lock)
+        return process_single_file(path, source, dest, args, seen_hashes, lock)
 
     if use_threads:
         with ThreadPoolExecutor(max_workers=args.workers) as executor:
@@ -450,7 +447,8 @@ def print_statistics(stats: Dict[str, Any], elapsed: float) -> None:
     print(f'Дубликатов: {stats["duplicates"]}')
     print(f'Из мессенджеров: {stats["messengers"]}')
     print(f'Мусор (мелкие файлы): {stats["junk"]}')
-    print(f'Дата не определена: {stats["undefined"]}')
+    print(f'Негативы (сканированные RAW): {stats["negatives"]}')
+    print(f'Без данных (дата не определена): {stats["undefined"]}')
     print(f'Ошибок: {stats["errors"]}')
 
     if stats['by_year']:

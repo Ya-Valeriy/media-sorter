@@ -189,20 +189,35 @@ class TestGetCreationDate:
 
     def test_camera_name(self, tmp_path):
         f = create_test_photo(tmp_path, "IMG_20240513_142035.jpg")
-        dt, source, approx = get_creation_date(f, allow_mtime=False)
+        dt, source, approx = get_creation_date(f)
         assert dt == datetime(2024, 5, 13, 14, 20, 35)
         assert source == "filename"
         assert approx is False
 
     def test_dashed_name(self, tmp_path):
         f = create_test_photo(tmp_path, "2024-05-13_14-20-35.jpg")
-        dt, source, approx = get_creation_date(f, allow_mtime=False)
+        dt, source, approx = get_creation_date(f)
         assert dt == datetime(2024, 5, 13, 14, 20, 35)
         assert source == "filename"
+        assert approx is False
 
     def test_no_date_no_mtime(self, tmp_path):
         f = create_test_photo(tmp_path, "random.jpg")
-        dt, source, approx = get_creation_date(f, allow_mtime=False)
+        dt, source, approx = get_creation_date(f)
+        assert dt is not None
+        assert source == "mtime"
+        assert approx is True
+
+    def test_no_date_with_mtime(self, tmp_path):
+        f = create_test_photo(tmp_path, "random.jpg")
+        dt, source, approx = get_creation_date(f)
+        assert dt is not None
+        assert source == "mtime"
+        assert approx is True
+
+    def test_video_no_date(self, tmp_path):
+        f = create_test_video(tmp_path, "random.mp4")
+        dt, source, approx = get_creation_date(f)
         assert dt is None
         assert source is None
 

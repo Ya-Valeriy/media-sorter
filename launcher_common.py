@@ -28,6 +28,8 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     'default_flags': {
         'check_duplicates': True,
         'junk_folder': True,
+        'rename_by_date': True,
+        'negative_folder': True,
         'dry_run_default': False,
     },
     'keep_console_open': True,

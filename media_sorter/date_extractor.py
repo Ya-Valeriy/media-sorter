@@ -218,13 +218,13 @@ def extract_date_from_exif(path: Path) -> Tuple[Optional[datetime], Optional[str
     Извлекает дату съёмки из EXIF-данных.
 
     Приоритет полей: DateTimeOriginal -> CreateDate -> ModifyDate.
-    Для HEIC/HEIF используется pillow-heif, для RAW — exifread.
+    Для RAW-файлов (.raw/.cr2/.cr3/.nef/.arw/.dng) используется exifread.
+    Для остальных изображений — Pillow.
 
     Возвращает кортеж (дата, offset_time), где offset_time — значение
     OffsetTimeOriginal (часовой пояс съёмки), если оно есть.
     """
     ext = path.suffix.lower()
-
     if ext in RAW_EXTENSIONS:
         data = _read_raw_exif(str(path))
         if not data:
@@ -244,20 +244,17 @@ def extract_date_from_exif(path: Path) -> Tuple[Optional[datetime], Optional[str
                     return dt, str(offset) if offset else None
         return None, None
 
-    if ext in IMAGE_EXTENSIONS:
-        data = _read_pillow_exif(str(path))
-        if not data:
-            return None, None
-        tags = data['tags']
-        offset = tags.get('OffsetTimeOriginal')
-        for tag_name in ('DateTimeOriginal', 'CreateDate', 'DateTimeDigitized', 'DateTime'):
-            value = tags.get(tag_name)
-            if value:
-                dt = _parse_exif_datetime(str(value))
-                if dt:
-                    return dt, str(offset) if offset else None
+    data = _read_pillow_exif(str(path))
+    if not data:
         return None, None
-
+    tags = data['tags']
+    offset = tags.get('OffsetTimeOriginal')
+    for tag_name in ('DateTimeOriginal', 'CreateDate', 'DateTimeDigitized', 'DateTime'):
+        value = tags.get(tag_name)
+        if value:
+            dt = _parse_exif_datetime(str(value))
+            if dt:
+                return dt, str(offset) if offset else None
     return None, None
 
 
@@ -478,6 +475,77 @@ def extract_video_duration(path: Path) -> Optional[float]:
     return None
 
 
+# --- Сканированные негативы (RAW от сканеров) ---
+
+SCANNER_BRANDS: frozenset[str] = frozenset({
+    'nikon', 'canon', 'epson', 'fujifilm', 'hasselblad',
+    'mamiya', 'phase one', 'pentax', 'plustek', 'microtek',
+    'agfa', 'contax', 'lea', 'hadland', 'duan',
+})
+
+SCANNER_MODEL_PATTERNS: frozenset[str] = frozenset({
+    'scan', 'film', 'negative', 'contact sheet',
+    'coolscan', 'super coolscan', 'plugscan',
+    'autoscan', 'transmission', 'reflection',
+})
+
+
+def _extract_raw_scanner_info(path: Path) -> Optional[Tuple[str, str]]:
+    """Возвращает (camera_model, maker_notes) из RAW-файла или None."""
+    try:
+        from PIL import Image
+    except ImportError:
+        return None
+    try:
+        with Image.open(path) as img:
+            exif = img.getexif()
+            if not exif:
+                return None
+            tags = {
+                ExifTags.TAGS.get(tag_id, tag_id): value
+                for tag_id, value in exif.items()
+            }
+            model = str(tags.get('Camera Model Name') or tags.get('DateTimeOriginal') or '')
+            maker = ''
+            try:
+                maker_ifd = exif.get_ifd(0x927C)
+                if maker_ifd:
+                    maker = {
+                        ExifTags.MAKERNOTE_TAGS.get(t, t): v
+                        for t, v in maker_ifd.items()
+                    }
+                    maker = str(maker)
+            except (AttributeError, OSError, ValueError):
+                pass
+            return model, maker
+    except Exception:
+        return None
+
+
+def is_scanned_negative(path: Path) -> bool:
+    """
+    Определяет, является ли RAW-файл сканированным негативом.
+
+    Проверяет EXIF-метаданные: если камера/сканер содержит названия
+    известных сканеров (Nikon Scan, Canon Flatbed, Epson Film и т.д.),
+    файл считается сканированным негативом.
+    """
+    if path.suffix.lower() not in RAW_EXTENSIONS:
+        return False
+    info = _extract_raw_scanner_info(path)
+    if not info:
+        return False
+    model, maker = info
+    text = (model + ' ' + maker).lower()
+    for brand in SCANNER_BRANDS:
+        if brand in text:
+            return True
+    for pattern in SCANNER_MODEL_PATTERNS:
+        if pattern in text:
+            return True
+    return False
+
+
 # --- Главная функция определения даты ---
 
 
@@ -510,7 +578,7 @@ def get_creation_date(path: Path) -> Tuple[Optional[datetime], str, bool]:
         if dt:
             return dt, 'filename', False
 
-    # Крайний случай — дата изменения файла
+    # Крайний случай — дата изменения файла (mtime)
     try:
         mtime = datetime.fromtimestamp(path.stat().st_mtime)
         return mtime, 'mtime', True

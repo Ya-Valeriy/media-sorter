@@ -63,7 +63,6 @@ class LauncherApp:
         self.off_y: float = 0.0
         self.win_w: int = BASE_WIDTH
         self.win_h: int = BASE_HEIGHT
-        self._fullscreen: bool = False
         self._resize_job: Optional[str] = None
         self._bg_item: Optional[int] = None
         self._placed: List[tuple] = []       # (widget, base_x, base_y, base_w, base_h)
@@ -169,13 +168,13 @@ class LauncherApp:
         flags = self.config.get('default_flags', {})
         self.dry_run_var = tk.BooleanVar(value=bool(flags.get('dry_run_default', False)))
         self.duplicates_var = tk.BooleanVar(value=bool(flags.get('check_duplicates', True)))
-        self.junk_var = tk.BooleanVar(value=bool(flags.get('junk_folder', True)))
         self.rename_var = tk.BooleanVar(value=bool(flags.get('rename_by_date', True)))
+        self.negative_var = tk.BooleanVar(value=bool(flags.get('negative_folder', True)))
+        self.junk_var = tk.BooleanVar(value=bool(flags.get('junk_folder', True)))
         self._checkbox(34, 195, 'Пробный прогон (ничего не удалим и не создадим, только проверка)', self.dry_run_var)
         self._checkbox(34, 215, 'Отсортировать дубликаты (создадим папку Дубликаты)', self.duplicates_var)
         self._checkbox(34, 235, 'Переименовать по дате съёмки (переименуем по метаданным / дате съёмки)', self.rename_var)
-        self.negative_var = tk.BooleanVar(value=bool(flags.get('negative_folder', True)))
-        self._checkbox(34, 255, 'Отсортировать негативы (создадим папку Негативы и поместим в нее файлы RAW)', self.negative_var)
+        self._checkbox(34, 255, 'Отсортировать негативы (создадим папку Негативы)', self.negative_var)
         self._checkbox(34, 275, 'Отсортировать мусор (создадим папку Мусор)', self.junk_var)
 
         # --- Пороги «Мусора» ---
@@ -192,16 +191,14 @@ class LauncherApp:
         # --- Кнопки ---
         self.run_button = ttk.Button(canvas, text='Запустить', style='Accent.TButton',
                                      command=self._start_sorting)
-        self._place(self.run_button, 34, 375, 134, 36)
-        self._place(ttk.Button(canvas, text='Отмена', command=self._on_close), 185, 375, 109, 36)
+        self._place(self.run_button, 34, 375, 175, 36)
+        self._place(ttk.Button(canvas, text='Отмена', command=self._on_close), 224, 375, 175, 36)
         self.report_button = ttk.Button(canvas, text='Открыть отчёт', command=self._open_report,
                                         state=tk.DISABLED)
-        self._place(self.report_button, 311, 375, 134, 36)
+        self._place(self.report_button, 414, 375, 175, 36)
         self.dest_button = ttk.Button(canvas, text='Открыть папку', command=self._open_dest,
                                       state=tk.DISABLED)
-        self._place(self.dest_button, 462, 375, 134, 36)
-        self._place(ttk.Button(canvas, text='⛶ На весь экран', command=self._toggle_fullscreen),
-                    610, 375, 196, 36)
+        self._place(self.dest_button, 604, 375, 175, 36)
 
         # --- Прогресс ---
         self.progress = ttk.Progressbar(canvas, mode='indeterminate')
@@ -376,18 +373,6 @@ class LauncherApp:
             self.canvas.coords(item, self._sx(x), self._sy(y))
             self.canvas.itemconfig(item, font=self._font(pt, bold=True))
         self._setup_styles()
-
-    def _toggle_fullscreen(self) -> None:
-        """Разворачивает окно на весь экран / возвращает исходный размер."""
-        self._fullscreen = not self._fullscreen
-        try:
-            if self._fullscreen:
-                self.root.state('zoomed')  # Windows: развернуть на весь экран
-            else:
-                self.root.state('normal')
-                self._center_window(self.win_w, self.win_h)
-        except tk.TclError:
-            self.root.attributes('-fullscreen', self._fullscreen)
 
     def _center_window(self, width: int, height: int) -> None:
         """Размещает окно по центру экрана."""

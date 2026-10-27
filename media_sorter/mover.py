@@ -11,7 +11,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional, Tuple
 
-from .date_extractor import IMAGE_EXTENSIONS, VIDEO_EXTENSIONS, extract_video_duration
+from .date_extractor import IMAGE_EXTENSIONS, RAW_EXTENSIONS, VIDEO_EXTENSIONS, extract_video_duration
 
 logger = logging.getLogger(__name__)
 
@@ -113,7 +113,7 @@ def build_destination_path(
     """
     Формирует путь назначения.
 
-    Структура: <dest_root>/<Год>_media/<ММ.ГГГГ>_media/<ММ.ГГГГ>_photo|_video/<файл>.
+    Структура: <dest_root>/<Год>_media/<ММ.ГГГГ>_media/<ММ.ГГГГ>_photo|_video|_raw/<файл>.
     Если задан special_folder — файл кладётся в <dest_root>/<special_folder>/<файл>.
     Если дата не определена — в <dest_root>/Дата_не_определена/<файл>.
 
@@ -129,6 +129,8 @@ def build_destination_path(
     year_dir = f'{date.year}_media'
     month_dir = f'{date.month:02d}.{date.year}_media'
     ext = Path(filename).suffix.lower()
+    if ext in RAW_EXTENSIONS:
+        return dest_root / year_dir / month_dir / f'{date.month:02d}.{date.year}_raw' / filename
     if ext in IMAGE_EXTENSIONS:
         return dest_root / year_dir / month_dir / f'{date.month:02d}.{date.year}_photo' / filename
     if ext in VIDEO_EXTENSIONS:
