@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 FOLDER_UNDEFINED: str = 'Дата_не_определена'
 FOLDER_DUPLICATES: str = 'Дубликаты'
 FOLDER_JUNK: str = 'Мусор'
+FOLDER_NEGATIVES: str = 'Негативы'
 
 # --- Паттерны имён файлов из мессенджеров ---
 

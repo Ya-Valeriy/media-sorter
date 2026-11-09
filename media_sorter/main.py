@@ -64,7 +64,7 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     parser.add_argument('--check-duplicates', action='store_true', help='Проверять дубликаты по MD5')
     parser.add_argument(
         '--junk-folder',
-        default='Мусор',
+        default=FOLDER_JUNK,
         help='Имя папки для мелких файлов (по умолчанию: Мусор)',
     )
     parser.add_argument(
@@ -97,7 +97,7 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     )
     parser.add_argument(
         '--negative-folder',
-        default='Негативы',
+        default=FOLDER_NEGATIVES,
         help='Имя папки для сканированных негативов (по умолчанию: Негативы)',
     )
     parser.add_argument(
@@ -199,7 +199,7 @@ def _make_duplicate_result(
 ) -> ProcessResult:
     """Формирует результат для файла-дубликата (перемещение в «Дубликаты») с переименованием по дате."""
     dup_dest = build_destination_path(
-        dest, file_path.name, date, FOLDER_DUPLICATES, rename_by_date=True
+        dest, file_path.name, date, FOLDER_DUPLICATES, rename_by_date=not args.no_rename
     )
     final_path, status = move_file_safely(file_path, dup_dest, args.dry_run)
     record = {
@@ -241,7 +241,7 @@ def process_single_file(
         video_kb = int(args.video_junk_max_kb * 1024) if args.video_junk_max_kb > 0 else None
         junk_reason = is_junk_file(file_path, photo_max, video_sec, video_kb)
         if junk_reason:
-            junk_dest = build_destination_path(dest, filename, None, FOLDER_JUNK)
+            junk_dest = build_destination_path(dest, filename, None, args.junk_folder)
             final_path, status = move_file_safely(file_path, junk_dest, args.dry_run)
             record = {
                 'source_path': str(file_path),
@@ -269,7 +269,7 @@ def process_single_file(
             logger.debug('Не удалось проверить негатив %s: %s', file_path, exc)
 
     if is_negative:
-        neg_dest = build_destination_path(dest, filename, None, FOLDER_NEGATIVES)
+        neg_dest = build_destination_path(dest, filename, None, args.negative_folder)
         final_path, status = move_file_safely(file_path, neg_dest, args.dry_run)
         record = {
             'source_path': str(file_path),
@@ -305,7 +305,9 @@ def process_single_file(
         if digest:
             with lock:
                 if digest in seen_hashes:
-                    return _make_duplicate_result(file_path, dest, digest, warnings, args)
+                    return _make_duplicate_result(
+                        file_path, dest, digest, warnings, args, date=date
+                    )
                 seen_hashes.add(digest)
 
     # 7. Перемещение

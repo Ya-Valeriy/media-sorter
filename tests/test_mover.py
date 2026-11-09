@@ -15,7 +15,8 @@ import pytest
 from media_sorter.mover import (
     FOLDER_DUPLICATES,
     FOLDER_JUNK,
-    FOLDER_NO_DATA,
+    FOLDER_NEGATIVES,
+    FOLDER_UNDEFINED,
     build_destination_path,
     build_renamed_filename,
     detect_messenger,
@@ -72,15 +73,15 @@ class TestBuildDestinationPath:
 
     def test_no_date_photo(self, tmp_path):
         result = build_destination_path(tmp_path, "IMG_001.jpg", None, None, False)
-        assert result == tmp_path / FOLDER_NO_DATA / "photo" / "IMG_001.jpg"
+        assert result == tmp_path / FOLDER_UNDEFINED / "IMG_001.jpg"
 
     def test_no_date_video(self, tmp_path):
         result = build_destination_path(tmp_path, "VID_001.mp4", None, None, False)
-        assert result == tmp_path / FOLDER_NO_DATA / "video" / "VID_001.mp4"
+        assert result == tmp_path / FOLDER_UNDEFINED / "VID_001.mp4"
 
     def test_no_date_unknown_extension(self, tmp_path):
         result = build_destination_path(tmp_path, "notes.txt", None, None, False)
-        assert result == tmp_path / FOLDER_NO_DATA / "notes.txt"
+        assert result == tmp_path / FOLDER_UNDEFINED / "notes.txt"
 
     def test_duplicates_folder(self, tmp_path):
         result = build_destination_path(tmp_path, "IMG_001.jpg", None, FOLDER_DUPLICATES)
@@ -90,10 +91,25 @@ class TestBuildDestinationPath:
         result = build_destination_path(tmp_path, "tiny.jpg", None, FOLDER_JUNK)
         assert result == tmp_path / FOLDER_JUNK / "tiny.jpg"
 
-    def test_raw_photo(self, tmp_path):
+    def test_negatives_folder(self, tmp_path):
+        result = build_destination_path(tmp_path, "scan.NEF", None, FOLDER_NEGATIVES)
+        assert result == tmp_path / FOLDER_NEGATIVES / "scan.NEF"
+
+    def test_raw_goes_to_raw_folder(self, tmp_path):
+        """RAW обязан попадать в _raw, а не в _photo (проверка RAW перед IMAGE)."""
         dt = datetime(2022, 8, 15, 10, 30, 0)
         result = build_destination_path(tmp_path, "DSC_001.NEF", dt, None, False)
-        assert result == tmp_path / "2022_media" / "08.2022_media" / "08.2022_photo" / "DSC_001.NEF"
+        assert result == tmp_path / "2022_media" / "08.2022_media" / "08.2022_raw" / "DSC_001.NEF"
+
+    def test_unknown_extension_with_date(self, tmp_path):
+        """Файл с датой, но неподдерживаемым расширением — в месячную папку без подпапки типа."""
+        dt = datetime(2024, 5, 13, 14, 20, 35)
+        result = build_destination_path(tmp_path, "notes.txt", dt, None, False)
+        assert result == tmp_path / "2024_media" / "05.2024_media" / "notes.txt"
+
+    def test_rename_with_no_date_keeps_name(self, tmp_path):
+        result = build_destination_path(tmp_path, "IMG_001.jpg", None, None, True)
+        assert result == tmp_path / FOLDER_UNDEFINED / "IMG_001.jpg"
 
     def test_heic_photo(self, tmp_path):
         dt = datetime(2024, 1, 1, 12, 0, 0)

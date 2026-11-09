@@ -16,7 +16,7 @@ from media_sorter.hash_utils import get_file_hash
 from media_sorter.mover import (
     FOLDER_DUPLICATES,
     FOLDER_JUNK,
-    FOLDER_NO_DATA,
+    FOLDER_UNDEFINED,
     build_destination_path,
     move_file_safely,
     resolve_collision,
@@ -70,7 +70,7 @@ class TestDestinationPathIntegration:
         dt = datetime(2022, 8, 15, 10, 30, 0)
         path = build_destination_path(tmp_path, "DSC_001.NEF", dt, None, False)
         parts = path.parts
-        assert "_photo" in parts[-2]  # 08.2022_photo
+        assert "_raw" in parts[-2]  # 08.2022_raw — RAW идёт отдельно от фото
         assert path.name == "DSC_001.NEF"
 
     def test_heic(self, tmp_path):
@@ -82,13 +82,13 @@ class TestDestinationPathIntegration:
 
     def test_no_date_photo(self, tmp_path):
         path = build_destination_path(tmp_path, "IMG_001.jpg", None, None, False)
-        assert FOLDER_NO_DATA in path.parts
-        assert "photo" in path.parts
+        assert FOLDER_UNDEFINED in path.parts
+        assert path.name == "IMG_001.jpg"
 
     def test_no_date_video(self, tmp_path):
         path = build_destination_path(tmp_path, "VID_001.mp4", None, None, False)
-        assert FOLDER_NO_DATA in path.parts
-        assert "video" in path.parts
+        assert FOLDER_UNDEFINED in path.parts
+        assert path.name == "VID_001.mp4"
 
     def test_duplicates(self, tmp_path):
         path = build_destination_path(tmp_path, "IMG_001.jpg", None, FOLDER_DUPLICATES)
@@ -201,38 +201,21 @@ class TestGetCreationDate:
         assert source == "filename"
         assert approx is False
 
-    def test_no_date_no_mtime(self, tmp_path):
+    def test_photo_no_date_falls_back_to_mtime(self, tmp_path):
+        """Фото без EXIF и даты в имени получает mtime как приблизительную дату."""
         f = create_test_photo(tmp_path, "random.jpg")
         dt, source, approx = get_creation_date(f)
         assert dt is not None
         assert source == "mtime"
         assert approx is True
 
-    def test_no_date_with_mtime(self, tmp_path):
-        f = create_test_photo(tmp_path, "random.jpg")
-        dt, source, approx = get_creation_date(f)
-        assert dt is not None
-        assert source == "mtime"
-        assert approx is True
-
-    def test_video_no_date(self, tmp_path):
+    def test_video_no_date_falls_back_to_mtime(self, tmp_path):
+        """Видео без даты в имени (ffprobe не распознал) получает mtime."""
         f = create_test_video(tmp_path, "random.mp4")
         dt, source, approx = get_creation_date(f)
-        assert dt is None
-        assert source is None
-
-    def test_no_date_with_mtime(self, tmp_path):
-        f = create_test_photo(tmp_path, "random.jpg")
-        dt, source, approx = get_creation_date(f, allow_mtime=True)
         assert dt is not None
         assert source == "mtime"
         assert approx is True
-
-    def test_video_no_date(self, tmp_path):
-        f = create_test_video(tmp_path, "random.mp4")
-        dt, source, approx = get_creation_date(f, allow_mtime=False)
-        assert dt is None
-        assert source is None
 
 
 # ======================== MD5 hash uniqueness ========================
