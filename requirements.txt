@@ -1,0 +1,9 @@
+# Основные зависимости для сортировки медиафайлов
+Pillow>=10.0.0          # чтение EXIF из JPEG/PNG/TIFF/HEIC (с pillow-heif)
+pillow-heif>=0.13.0     # поддержка HEIC/HEIF
+exifread>=3.0.0         # чтение EXIF из RAW (CR2, CR3, NEF, ARW, DNG)
+tqdm>=4.66.0            # прогресс-бар (опционально)
+
+# Метаданные видео: ffmpeg-python (обёртка над ffprobe).
+# Если ffmpeg-python не установлен, скрипт использует ffprobe через subprocess.
+ffmpeg-python>=0.2.0
